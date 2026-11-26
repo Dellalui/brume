@@ -6,6 +6,7 @@ on:
     paths:
       - 'dist/**'
       - 'brume.zip'
+      - 'recovery/import-release.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -21,42 +22,57 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
     outputs:
-      ready: ${{ steps.prepare.outputs.ready }}
+      pages_enabled: ${{ steps.pages.outputs.enabled }}
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare static site
-        id: prepare
+      - name: Verify and import source files
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -f dist/index.html ]]; then
-            site="$GITHUB_WORKSPACE/dist"
-          elif [[ -f brume.zip ]]; then
-            mkdir -p "$RUNNER_TEMP/brume"
-            unzip -q brume.zip -d "$RUNNER_TEMP/brume"
-            site="$RUNNER_TEMP/brume/dist"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Importez brume.zip a la racine du depot avant de publier."
-            exit 0
+          if [[ ! -f dist/index.html ]]; then
+            test -f brume.zip
+            python3 recovery/import-release.py brume.zip
+            git add -- dist/
+            if ! git diff --cached --quiet; then
+              git config user.name 'github-actions[bot]'
+              git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+              git commit -m 'Import verified astral release (164 static files)'
+              git push origin HEAD:main
+            fi
           fi
-          test -f "$site/index.html"
-          test -f "$site/editor.mjs"
-          test -f "$site/vendor/three.module.min.js"
-          touch "$site/.nojekyll"
-          echo "ready=true" >> "$GITHUB_OUTPUT"
-          echo "site=$site" >> "$GITHUB_OUTPUT"
+          test -s dist/index.html
+          test -s dist/editor.mjs
+          test -s dist/environment.mjs
+          test -s dist/vendor/three.module.min.js
+          test -d dist/assets/materials
+          test -d dist/assets/kenney
+          touch dist/.nojekyll
+      - name: Check Pages activation
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          enabled=$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_pages)
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          if [[ "$enabled" != true ]]; then
+            echo "::notice::Les sources sont importees. Activez GitHub Actions dans Settings > Pages, puis relancez ce workflow."
+          fi
       - name: Configure Pages
-        if: steps.prepare.outputs.ready == 'true'
+        if: steps.pages.outputs.enabled == 'true'
         uses: actions/configure-pages@v5
       - name: Upload site
-        if: steps.prepare.outputs.ready == 'true'
+        if: steps.pages.outputs.enabled == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ${{ steps.prepare.outputs.site }}
+          path: dist/
   deploy:
-    if: needs.build.outputs.ready == 'true'
+    if: needs.build.outputs.pages_enabled == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment:
