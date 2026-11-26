@@ -8,6 +8,7 @@ import {createAppearanceViewer,angleFrame,wrapAngle} from './appearance-preview.
 import * as C from './construction.mjs';
 import * as BT from './block-tools.mjs';
 import * as W from './world.mjs';
+import {createPathSync,collisionObject} from './path-sync.mjs';
 import {expireEffects,launchEffect,effectEnvelope} from './effect-layer.mjs';
 import {renderer} from './scene.mjs';
 import {rememberInspector,organizeInspector} from './interface.mjs';
@@ -24,11 +25,11 @@ const groupOf=o=>map().groups.find(g=>g.id===o.group),locked=o=>o.locked||groupO
 let effectListWorld=null,effectListKey='';
 let creativeAimDirty=false,creativeResume=false;
 let buildTab='catalog',effectClock=null,zoneStart=null,zoneEnd=null,blockClipboard=null,skipBlockContext=false;
-let pathWorker=null,pathRequest=0,pathCallback=null,pathPending=false;try{if(typeof Worker!=='undefined')pathWorker=new Worker('./path-worker.mjs',{type:'module'})}catch{}
+const pathSync=createPathSync();let pathRevision=0,pathWorker=null,pathRequest=0,pathCallback=null,pathPending=false;try{if(typeof Worker!=='undefined')pathWorker=new Worker('./path-worker.mjs',{type:'module'})}catch{}
 function cancelPath(){pathRequest++;pathCallback=null;pathPending=false;pathWorker?.postMessage({cancel:true})}
 function pathKey(id,p){return id+':'+W.cellKey(p.x,p.y)+':'+(p.z??'auto')}
-function requestPath(o,dest,callback){let id=++pathRequest;pathCallback=callback;if(!pathWorker){callback(W.findPath(map(),o,dest));return}pathWorker.postMessage({id,map:map(),actor:o,destination:dest})}
-if(pathWorker){pathWorker.onmessage=({data})=>{if(data.id!==pathRequest)return;let cb=pathCallback;pathCallback=null;cb?.(data.path)};pathWorker.onerror=()=>{pathWorker.terminate();pathWorker=null;pathPending=false;pathCallback=null;toast('Calcul du trajet interrompu. Cliquez à nouveau pour réessayer.')};}
+function requestPath(o,dest,callback){let id=++pathRequest;pathCallback=callback;if(!pathWorker){callback(W.findPath(map(),o,dest));return}const state=pathSync.prepare(map());pathRevision=state.revision;pathWorker.postMessage({...state,id,actor:collisionObject(o),destination:dest})}
+if(pathWorker){pathWorker.onmessage=({data})=>{if(data.id!==pathRequest||data.revision!==pathRevision)return;if(data.error)pathSync.reset();let cb=pathCallback;pathCallback=null;cb?.(data.path)};pathWorker.onerror=()=>{pathWorker.terminate();pathWorker=null;pathPending=false;pathCallback=null;toast('Calcul du trajet interrompu. Cliquez à nouveau pour réessayer.')};}
 function combatants(){let ids=map().combat?.active?new Set(map().combat.ids):null;return map().objects.filter(o=>W.character(o)&&(!ids||ids.has(o.id))).sort((a,b)=>b.init-a.init)}
 function openCombat(){$('#startCombat').textContent=map().combat?.active?'Appliquer les participants':'Démarrer le combat';$('#stopCombat').hidden=!map().combat?.active;let root=$('#combatChoices');root.replaceChildren();for(let o of map().objects.filter(W.character)){let label=document.createElement('label');label.className='check';let cb=document.createElement('input');cb.type='checkbox';cb.value=o.id;cb.checked=map().combat?.ids?.includes(o.id)||o.id===selection;let name=document.createElement('span');name.textContent=o.name+' · '+W.TYPES[o.type];let initiative=document.createElement('input');initiative.type='number';initiative.value=o.init||0;initiative.min=-100;initiative.max=1000;initiative.dataset.initiative=o.id;initiative.setAttribute('aria-label','Initiative de '+o.name);label.classList.add('combat-choice');label.append(cb,name,initiative);root.append(label)}$('#combatDialog').showModal()}
 function renderMapActions(){let m=map(),root=$('#mapActions');root.hidden=tool!=='extend'||mode!=='build'||viewMode!=='mj';if(root.hidden)return;let positions={east:[m.width+1,m.height/2],south:[m.width/2,m.height+1]},last=m.extensions?.at(-1);if(last)positions.remove=last.direction==='east'?[(last.width+m.width)/2,m.height/2]:[m.width/2,(last.height+m.height)/2];for(let name of ['east','south','remove']){let b=$('#mapAction-'+name),p=positions[name];b.hidden=!p;if(!p)continue;let at=scene.screen(...p),r=canvas.getBoundingClientRect();b.style.left=W.clamp(at.x,120,r.width-120)+'px';b.style.top=W.clamp(at.y,65,r.height-100)+'px';b.disabled=name==='east'?m.width>=W.MAX_MAP:name==='south'?m.height>=W.MAX_MAP:false;if(name!=='remove')b.title='Ajouter '+m.width+' × '+m.height+' cases';}}
@@ -41,7 +42,7 @@ function queueSave(){clearTimeout(saveTimer);saveTimer=setTimeout(save,300)}
 function save(){clearTimeout(saveTimer);saveTimer=null;if(!loaded.canSave){$('#saveStatus').textContent='Ancienne sauvegarde protégée · écriture suspendue';return false}try{localStorage.setItem('brumes-v4',JSON.stringify(world));$('#saveStatus').textContent='Enregistré sur ce navigateur';return true}catch{$('#saveStatus').textContent='Stockage plein · sauvegarde impossible';return false}}
 function remember(){undo.push(JSON.stringify(world));if(undo.length>35)undo.shift();redo.length=0;updateHistory()}
 function updateHistory(){$('#undo').disabled=!undo.length;$('#redo').disabled=!redo.length}
-function restore(from,to){if(!from.length)return;clearNavigationInput();effectListWorld=null;stopMovement();to.push(JSON.stringify(world));world=JSON.parse(from.pop());expireEffects(world);ensureEffectClock();selection=map().objects.some(o=>o.id===selection)?selection:null;dirty=true;lights=null;lightCache.clear();save();refresh();preload()}
+function restore(from,to){if(!from.length)return;clearNavigationInput();effectListWorld=null;stopMovement();to.push(JSON.stringify(world));world=JSON.parse(from.pop());pathSync.reset();expireEffects(world);ensureEffectClock();selection=map().objects.some(o=>o.id===selection)?selection:null;dirty=true;lights=null;lightCache.clear();save();refresh();preload()}
 function invalidate(){map().buildRevision=(map().buildRevision||0)+1;cancelPath();dirty=true;lights=null;visibilityKey='';terrainEpoch++;lightCache.clear();route=[];routeFor=null;clearTimeout(previewTimer);schedule()}
 function change(fn,rebuild=true){stopMovement();remember();fn();for(const o of map().objects){ensureNpcPreset(o);loadNpcAppearance(o)}invalidate();save();if(rebuild)refresh()}
 function log(text){world.log.unshift({text,time:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})});world.log=world.log.slice(0,60);save();renderJournal()}

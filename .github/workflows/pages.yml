@@ -16,6 +16,10 @@ on:
       - 'tests/liquid-flow.mjs'
       - 'tests/camera-collision.mjs'
       - 'tests/path-markers.mjs'
+      - 'tests/**'
+      - 'test-*.mjs'
+      - 'test-support/**'
+      - 'package.json'
       - 'recovery/import-release.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -69,17 +73,8 @@ jobs:
             python3 -m pip install --disable-pip-version-check Pillow==11.3.0
             python3 scripts/prepare-npcs.py
           fi
-          node --check dist/editor.mjs
-          node tests/npc-presets.mjs
-          node --check dist/scene.mjs
-          node tests/shadow-stability.mjs
-          node tests/block-visibility.mjs
-          node tests/liquid-flow.mjs
-          node --check dist/navigation.mjs
-          node tests/camera-collision.mjs
-          node --check dist/path-markers.mjs
-          node tests/path-markers.mjs
-          node --check dist/liquid-flow.mjs
+          for f in dist/*.mjs; do node --check "$f"; done
+          npm test
           git add -- dist/assets/npc
           if ! git diff --cached --quiet; then
             git config user.name 'github-actions[bot]'

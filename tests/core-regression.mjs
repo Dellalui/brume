@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import * as W from '../dist/world.mjs';
+import {fixture} from '../test-support/three-fixture.mjs';
+let map=W.newMap('core','Core',24,24);W.prepareBlocks(map);let actor={...W.newObject('hero',2,5,'a'),voxelZ:0};map.objects=[actor];
+for(let y=0;y<24;y++)if(y!==4)for(let z=0;z<3;z++)W.setBlock(map,5,y,z,'stone');
+let route=W.findPath(map,actor,{x:8,y:5,z:0});assert(route.length>1);assert(route.some(p=>p.y===4));for(let i=1;i<route.length;i++)assert(W.stepFree(map,route[i-1],route[i],actor));
+W.setBlock(map,5,4,0,'stone');W.setBlock(map,5,4,1,'stone');W.setBlock(map,5,4,2,'stone');assert.equal(W.findPath(map,actor,{x:8,y:5,z:0}).length,0);
+assert(!W.setBlock(map,NaN,1,0,'stone'));assert(W.setBlock(map,2,2,0,'glass',.5));assert.equal(W.blockSize(map,2,2,0),.5);assert(W.setBlock(map,2,2,0,null));
+let store=new Map([['brumes-v4','{bad json']]);const load=W.readSavedWorld({getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v)});assert(load.recovered);assert.equal(store.get('brumes-v4-recovery'),'{bad json');
+let legacy=W.defaultWorld();legacy.maps[0].notes='Preserve me';store.set('brumes-v4',JSON.stringify(legacy));const valid=W.readSavedWorld({getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v)});assert.equal(valid.world.maps[0].notes,'Preserve me');
+const {r}=fixture();const opts={map,selection:null,images:new Map(),lights:W.buildLights(map),vision:new Set(),explored:new Set(),mode:'mj',terrainEpoch:1,path:[]};r.render(opts);let p=r.screen(2.5,5.5,1);assert.equal(r.pick(p.x,p.y),'a');r.dispose();
+console.log('PASS: construction, valid routes, blocked wall, damaged save recovery and actor picking.');

@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import * as W from '../dist/world.mjs';
+import {createPathSync,applyPathSync,collisionObject} from '../dist/path-sync.mjs';
+import {Worker} from 'node:worker_threads';
+let m=W.newMap('path','Path',32,32);W.prepareBlocks(m);let a={...W.newObject('hero',2,2,'a'),voxelZ:0};m.objects=[a];
+const sync=createPathSync();let msg=sync.prepare(m),state=applyPathSync(null,structuredClone(msg));assert(msg.init);
+const dest={x:9,y:2,z:0};assert.deepEqual(W.findPath(state.map,collisionObject(a),dest),W.findPath(m,a,dest));
+msg=sync.prepare(m);assert.deepEqual(Object.keys(msg),['revision']);
+W.setBlock(m,4,2,0,'stone');msg=sync.prepare(m);assert(!msg.init);assert.deepEqual(Object.keys(msg.deltas.blocks.set),['4,2']);state=applyPathSync(state,structuredClone(msg));assert.deepEqual(W.findPath(state.map,collisionObject(a),dest),W.findPath(m,a,dest));
+W.setBlock(m,4,2,0,null);msg=sync.prepare(m);assert.deepEqual(msg.deltas.blocks.remove,['4,2']);state=applyPathSync(state,structuredClone(msg));
+a.x=3;msg=sync.prepare(m);assert(msg.update.objects&&!msg.init);state=applyPathSync(state,structuredClone(msg));assert.equal(state.map.objects[0].x,3);
+const url=new URL('../dist/path-worker.mjs',import.meta.url).href;
+const worker=new Worker(`const {parentPort}=require('node:worker_threads');global.self={postMessage:data=>parentPort.postMessage(data)};import(${JSON.stringify(url)}).then(()=>{parentPort.on('message',data=>self.onmessage({data}));parentPort.postMessage({ready:true})});`,{eval:true});
+try{await new Promise((resolve,reject)=>{worker.once('message',resolve);worker.once('error',reject)});
+ sync.reset();const initial=sync.prepare(m);let received=[];
+ const reply=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Worker timeout')),10000);worker.on('message',d=>{received.push(d);if(d.id===2){clearTimeout(timer);resolve(d)}})});
+ worker.postMessage({...initial,id:1,actor:collisionObject(a),destination:{x:25,y:25,z:0}});
+ worker.postMessage({...sync.prepare(m),id:2,actor:collisionObject(a),destination:dest});
+ const response=await reply;assert.equal(response.revision,initial.revision);assert.deepEqual(response.path,W.findPath(m,a,dest));
+}finally{await worker.terminate()}
+console.log('PASS: worker snapshot, collision deltas, removal, actor movement, persistent revision and real worker requests.');
