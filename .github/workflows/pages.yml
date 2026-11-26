@@ -8,6 +8,9 @@ on:
       - 'index.html'
       - '.nojekyll'
       - 'brume.zip'
+      - 'brume-pnj-16-vues.zip'
+      - 'scripts/prepare-npcs.py'
+      - 'tests/npc-presets.mjs'
       - 'recovery/import-release.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -53,6 +56,23 @@ jobs:
           test -d dist/assets/materials
           test -d dist/assets/kenney
           touch dist/.nojekyll
+      - name: Prepare and verify built-in NPC appearances
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ $(find dist/assets/npc -maxdepth 1 -name '*.webp' 2>/dev/null | wc -l) -ne 96 ]]; then
+            python3 -m pip install --disable-pip-version-check Pillow==11.3.0
+            python3 scripts/prepare-npcs.py
+          fi
+          node --check dist/editor.mjs
+          node tests/npc-presets.mjs
+          git add -- dist/assets/npc
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'Import and normalize 96 directional NPC sprites'
+            git push origin HEAD:main
+          fi
       - name: Check Pages activation
         id: pages
         env:
@@ -111,7 +131,8 @@ jobs:
                grep -Fq 'src="editor.mjs"' "$RUNNER_TEMP/smoke/game.html" &&
                curl -fsSL --max-time 15 "$base/dist/editor.mjs$query" -o "$RUNNER_TEMP/smoke/editor.mjs" &&
                curl -fsSL --max-time 15 "$base/dist/assets/materials/grass.jpg$query" -o "$RUNNER_TEMP/smoke/grass.jpg" &&
-               python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); assert (p/"editor.mjs").stat().st_size>1000; assert (p/"grass.jpg").read_bytes().startswith(bytes.fromhex("ffd8"))' "$RUNNER_TEMP/smoke"; then
+               curl -fsSL --max-time 15 "$base/dist/assets/npc/guard-00.webp$query" -o "$RUNNER_TEMP/smoke/guard.webp" &&
+               python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); assert (p/"editor.mjs").stat().st_size>1000; assert (p/"grass.jpg").read_bytes().startswith(bytes.fromhex("ffd8")); assert (p/"guard.webp").read_bytes()[8:12]==b"WEBP"' "$RUNNER_TEMP/smoke"; then
               echo "Public game HTML, entry module and grass texture verified: $base/dist/index.html"
               exit 0
             fi

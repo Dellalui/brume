@@ -52,3 +52,6 @@ canvas:focus{outline:none}.toolgrid{grid-template-columns:repeat(4,minmax(0,1fr)
 
 /* Vignettes des matières : mêmes textures locales que le plateau. */
 .block-swatch{background-color:var(--block-color,#879977);background-image:linear-gradient(135deg,#ffffff1c,#00000018),var(--block-texture,none);background-size:cover;background-position:center;background-blend-mode:normal,luminosity;border:1px solid #b7c3a34d;box-shadow:0 2px 5px #0004,inset 1px 1px #fff2;transform:none}.inventory-grid .block-swatch{width:42px;height:42px;border-radius:5px}.block-choice .block-swatch{width:36px;height:36px}
+
+/* Shared directional character presets */
+.npc-presets{margin:0 0 12px;padding:9px 0;border-bottom:1px solid #394c43}.npc-preset-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0}.npc-preset-grid button{min-width:0;padding:5px 2px;display:flex;align-items:center;flex-direction:column;gap:4px;min-height:98px;white-space:normal;font-size:11px;line-height:1.2}.npc-preset-grid img{width:52px;height:74px;object-fit:contain}.npc-preset-grid button.chosen{outline:2px solid #b5d4a1;background:#394b38}.npc-presets .row button{font-size:11px;flex:1}
