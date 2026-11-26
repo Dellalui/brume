@@ -20,7 +20,7 @@ export function organizeInspector(root,o){
  for(const d of root.querySelectorAll('details')){let name=d.querySelector('summary')?.textContent;d.open=expansion.has(name)?expansion.get(name):!name?.includes('BARRE DE VIE');d.ontoggle=()=>expansion.set(name,d.open)}
  // Group advanced physics/secret switches away from the common movement and health controls.
  const advanced=document.createElement('details');advanced.className='advanced-properties';advanced.innerHTML='<summary>Collision, ombre et confidentialité</summary>';
- for(const id of ['objectBlocking','objectSight','objectShadow','objectSecret']){let field=root.querySelector('#'+id)?.closest('label');if(field)advanced.append(field)}pages.general.append(advanced);
+ for(const id of ['objectBlocking','objectSight','objectShadow','objectSecret']){let field=root.querySelector('#'+id)?.closest('label');if(field)advanced.append(field)}if(advanced.children.length>1)pages.general.append(advanced);
  const actions=root.querySelector('#focusObject')?.parentElement;if(actions){actions.classList.add('object-actions');pages.general.append(actions)}
  const health=root.querySelector('#healthMax')?.closest('details');if(actor&&health){health.open=true;health.querySelector('summary').textContent='Vie et affichage';const row=root.querySelector('#actorHP')?.parentElement?.parentElement;if(row)health.querySelector('summary').after(row)}
  if(!pages.vision.textContent.trim()){pages.vision.innerHTML='<p class="empty">Cet élément n’émet pas de lumière. Ajoutez une source depuis Scène, ou sélectionnez un personnage pour régler sa vision.</p>'}

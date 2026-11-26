@@ -1,0 +1,197 @@
+/* Les Brumes workspace. Keep legacy controls and engine hooks, but give them one layout. */
+body.workspace-ui{--bg:#111b18;--panel:#192620;--line:#34473e;--text:#e7ece3;--muted:#a2b4a6;--gold:#dfc58d;--header:66px;--rail:76px;--left:292px;--right:332px;--dock-l:0px;--dock-r:0px;--edge:12px}
+.workspace-ui[data-dock-left="true"]{--dock-l:var(--left)}
+.workspace-ui[data-dock-right="true"]{--dock-r:var(--right)}
+.workspace-ui .topbar{height:var(--header);display:grid;grid-template-columns:auto minmax(180px,1fr) auto auto;grid-template-areas:"brand campaign mode global";padding:8px 16px;gap:14px;background:#14201c;border-color:#34453b;align-content:center;box-shadow:0 1px 0 #0005}
+.workspace-ui .brand{grid-area:brand;display:flex;min-width:0;gap:9px;letter-spacing:1.7px;font-size:12px;white-space:nowrap}
+.workspace-ui .brand>b{font-size:30px;line-height:1}
+.workspace-ui .brand>div{display:block}
+.workspace-ui .brand .test-edition{font-size:9px;letter-spacing:1.5px;color:#a3b5a5;font-weight:500;margin-top:4px}
+.workspace-ui .workspace-campaign{grid-area:campaign;min-width:0;max-width:400px}
+.workspace-ui .workspace-overline,.workspace-ui .view-switch>span{display:block;font-size:9px;letter-spacing:1.2px;color:var(--muted);margin:0 0 4px}
+.workspace-ui .workspace-map,.workspace-ui .workspace-mode,.workspace-ui .workspace-global,.workspace-ui .workspace-history{display:flex;align-items:center;gap:6px;min-width:0}
+.workspace-ui .workspace-mode{grid-area:mode}
+.workspace-ui .workspace-global{grid-area:global;justify-content:flex-end}
+.workspace-ui .workspace-map select{flex:1;width:0;max-width:none;font-size:12px}
+.workspace-ui .topbar .view-switch{margin:0;flex:0 0 auto;min-width:110px}
+.workspace-ui .topbar .view-switch select{width:auto;max-width:160px;margin:0;font-size:12px}
+.workspace-ui .topbar button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:7px 9px;font-size:12px;white-space:nowrap;border-radius:6px}
+.workspace-ui .topbar svg,.workspace-ui #selectionBar svg{width:17px;height:17px;flex-shrink:0}
+.workspace-ui .topbar .segmented{padding:3px;gap:2px}
+.workspace-ui .topbar .segmented button{padding:7px 13px;min-height:32px}
+.workspace-ui .topbar .segmented button.active{background:#dac58e;color:#19251c;font-weight:700}
+.workspace-ui #save{background:#d8c18c;color:#1c2a21;border-color:#d8c18c;font-weight:650}
+.workspace-ui #commandLauncher{background:#101b17;border-color:#43564a;color:#c7d4c8}
+.workspace-ui #commandLauncher kbd{font-size:10px;margin-left:4px;color:#91a799;border:1px solid #40544a;border-radius:4px;padding:2px 4px}
+.workspace-ui #focusWorkspace[aria-pressed="true"]{border-color:var(--gold);color:var(--gold)}
+.workspace-ui .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.workspace-ui .rail{top:var(--header);width:var(--rail);padding:8px 6px 10px;background:#15231e;border-color:#34473d;gap:3px;overflow:auto;scrollbar-width:thin}
+.workspace-ui .rail-section{display:flex;flex-direction:column;gap:2px;margin:0 0 5px}
+.workspace-ui .rail-section>small{font-size:8px;text-align:center;letter-spacing:1.1px;color:#779284;padding:6px 0 4px}
+.workspace-ui .rail button{position:relative;display:flex;align-items:center;flex-direction:column;justify-content:center;gap:4px;min-height:49px;padding:5px 1px;border-radius:7px;color:#a4b8a9}
+.workspace-ui .rail button>svg{width:21px;height:21px}
+.workspace-ui .rail button>span{font-size:10px;line-height:1.15;margin:0}
+.workspace-ui .rail button:hover{background:#273a30;border-color:transparent}
+.workspace-ui .rail button.active{background:#2c4034;border-color:#58735b;color:#e5cf9a}
+.workspace-ui .rail button.active::before{content:"";position:absolute;left:0;top:11px;bottom:11px;width:2px;background:var(--gold);border-radius:2px}
+.workspace-ui #viewport{top:var(--header);left:calc(var(--rail) + var(--dock-l));right:var(--dock-r);bottom:0}
+body.workspace-ui .panel[data-docked="true"]{top:var(--header)!important;bottom:0!important;left:var(--rail)!important;right:auto!important;width:var(--left)!important;max-width:calc(100vw - var(--rail))!important;max-height:none!important;min-width:0;border-radius:0;border:0;border-right:1px solid #3b4e42;box-shadow:none;backdrop-filter:none;background:#1a2821;display:flex;flex-direction:column;z-index:24!important}
+body.workspace-ui #inspectorPanel[data-docked="true"]{left:auto!important;right:0!important;width:var(--right)!important;border-right:0;border-left:1px solid #3b4e42}
+.workspace-ui .panelhead{cursor:default;flex-shrink:0;height:47px;background:#1e3027;padding:0 14px;border-color:#344b3f}
+.workspace-ui .panelhead span{font-size:11px;letter-spacing:1px;font-weight:650;color:#dbe5d8}
+.workspace-ui .panelhead button{padding:4px 8px;font-size:22px;min-width:30px;min-height:30px}
+.workspace-ui .panelbody{flex:1;min-height:0;max-height:none;overflow:auto;padding:16px 14px 30px;scrollbar-gutter:stable}
+.workspace-ui .panelbody label{font-size:12px;color:#c8d6c9;margin:11px 0;line-height:1.4}
+.workspace-ui .panelbody input,.workspace-ui .panelbody select,.workspace-ui .panelbody textarea{font-size:13px}
+.workspace-ui .panelbody h3{font-size:10px;letter-spacing:1.3px;margin:20px 0 10px;color:#aec1b0}
+.workspace-ui .panelbody p.micro{font-size:11px;line-height:1.5;color:#9eafa1}
+.workspace-ui .panelbody details{background:#15221c;border:1px solid #354a3e;border-radius:7px;margin:10px 0;padding:0 10px}
+.workspace-ui .panelbody details summary{cursor:pointer;padding:12px 0;color:#d1ddce;font-size:11px;letter-spacing:.4px}
+.workspace-ui .panelbody .section-tabs,.workspace-ui .scene-settings-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;padding:4px;background:#111f19;border:1px solid #354a3e;border-radius:8px;margin:0 0 16px}
+.workspace-ui .section-tabs button,.workspace-ui .scene-settings-tabs button{font-size:12px;text-transform:none;padding:9px 5px;min-width:0;background:transparent;border-color:transparent;color:#9fb5a5}
+.workspace-ui .section-tabs button[aria-selected="true"],.workspace-ui .scene-settings-tabs button[aria-selected="true"]{background:#344b3c;color:#f0dcaa;border-color:#526b54}
+.workspace-ui .objecttitle{font-size:20px;letter-spacing:0;font-weight:650;overflow-wrap:anywhere;margin:0 0 14px}
+.workspace-ui .group{border-radius:7px}
+.workspace-ui .grouphead{min-height:33px;background:#253a2e;font-size:12px}
+.workspace-ui .layerrow{font-size:12px;padding:8px 7px 8px 12px;min-height:33px}
+.workspace-ui .layerrow button,.workspace-ui .grouphead button{font-size:12px;min-width:22px}
+.workspace-ui .scene-chip{top:12px;left:14px;max-width:calc(100% - 162px);padding:9px 11px;background:#13241de6;border:1px solid #3f5a49;border-radius:7px;gap:8px;letter-spacing:.8px;z-index:3;font-size:10px}
+.workspace-ui #mapSize{color:#a6bba9;font-size:10px;white-space:nowrap}
+.workspace-ui #performanceHud{right:12px;top:12px;min-width:118px;background:#13241de8;border-color:#40594a;z-index:3}
+.workspace-ui #pathBadge{top:67px;left:50%;max-width:calc(100% - 30px);text-align:center;white-space:nowrap;z-index:4}
+.workspace-ui #activeTask{top:67px;left:14px;right:auto;transform:none;max-width:calc(100% - 28px);z-index:4}
+.workspace-ui .statusbar{height:32px;bottom:0;background:#12221c;color:#b3c4b5;border-color:#344a3d;font-size:10px;gap:10px;padding:0 12px}
+.workspace-ui .statusbar #hint{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.workspace-ui .statusbar #saveStatus{white-space:nowrap;flex-shrink:0;color:#a9c5a7}
+.workspace-ui .camera-bar{bottom:44px;right:12px;left:auto;top:auto;max-width:calc(100% - 24px);transform:none;padding:5px;background:#13241ded;border-color:#3e5748;z-index:3;gap:2px}
+.workspace-ui .camera-bar button{font-size:16px;min-height:30px;padding:4px 7px}
+.workspace-ui .camera-bar select{font-size:11px;max-width:110px;margin:0 3px}
+.workspace-ui .camera-bar #cameraModeLabel{font-size:9px;letter-spacing:.2px;color:#adc2ae}
+.workspace-ui #selectionBar{position:absolute;bottom:98px;left:12px;z-index:3;display:flex;align-items:center;gap:6px;padding:9px 10px;max-width:calc(100% - 24px);background:#13241dec;border:1px solid #435b4a;border-radius:8px}
+.workspace-ui #selectionBar>div{min-width:0;max-width:205px;display:flex;flex-direction:column;gap:3px;margin-right:4px}
+.workspace-ui #selectionBar small{font-size:8px;letter-spacing:1.2px;color:#8fae98}
+.workspace-ui #selectionBar strong{font-size:14px;color:#eee6d0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.workspace-ui #selectionBar span{font-size:10px;color:#aabfad}
+.workspace-ui #selectionBar button{display:flex;align-items:center;justify-content:center;padding:7px;min-height:30px;font-size:11px;background:#273c30}
+.workspace-ui .encounter{position:absolute;left:12px;bottom:163px;max-width:calc(100% - 24px);z-index:4;background:#15251eed}
+.workspace-ui #roster{max-width:min(360px,50vw)}
+.workspace-ui #playerCameraHud{bottom:100px;left:12px;transform:none;font-size:12px;padding:8px 12px;background:#14231fdf}
+.workspace-ui #returnToMJ{position:absolute;bottom:44px;left:12px;transform:none;z-index:5;font-size:12px;padding:8px 12px}
+body.workspace-ui.preview [data-mj-only]{display:none!important}
+body.workspace-ui.preview .workspace-mode{justify-content:flex-start}
+body.workspace-ui.preview .workspace-campaign{visibility:hidden}
+body.workspace-ui.workspace-focus{--rail:0px;--dock-l:0px;--dock-r:0px}
+body.workspace-ui.workspace-focus .rail,body.workspace-ui.workspace-focus .panel,body.workspace-ui.workspace-focus #selectionBar{display:none!important}
+.workspace-ui #creativeHud{position:absolute;bottom:42px;max-width:calc(100% - 24px);z-index:22}
+.workspace-ui #hotbar{max-width:100%;overflow:auto;gap:4px;padding:5px;border-radius:8px;background:#13241eee}
+.workspace-ui #hotbar .hot-slot{width:clamp(38px,5.5vw,65px);min-width:38px;height:59px;flex-shrink:0}
+.workspace-ui .hotbar-wrap{gap:5px}
+.workspace-ui .hotbar-wrap>button{min-width:56px;font-size:17px;padding:6px}
+.workspace-ui .creative-hint{font-size:10px}
+body.workspace-ui.creative-building .camera-bar{top:60px;bottom:auto;left:12px;right:auto;max-width:calc(100% - 24px)}
+body.workspace-ui.creative-building .statusbar{bottom:0}
+body.workspace-ui.creative-building .rail [data-tool="fog"]{display:flex}
+body.workspace-ui.creative-building #selectionBar{display:none!important}
+.workspace-ui #creativeCapture{position:absolute;inset:auto auto 165px 50%;transform:translateX(-50%);width:min(480px,calc(100% - 32px));padding:15px 18px;background:#15271fec;border-radius:10px}
+.workspace-ui #creativeCapture h2{font-size:17px;margin:6px 0}
+.workspace-ui #creativeCapture p{font-size:11px;line-height:1.5;margin:8px 0}
+.workspace-ui #creativeCapture button{padding:9px;margin:6px auto;font-size:12px}
+.workspace-ui #creativeCapture small{font-size:10px;margin-top:7px}
+.workspace-ui .creative-inventory{position:absolute;left:50%;top:12px;bottom:136px;transform:translateX(-50%);height:auto;min-height:0;max-height:none;width:min(920px,calc(100% - 24px));max-width:none;border-radius:12px;background:#17271f;box-shadow:0 16px 50px #0007;backdrop-filter:none;z-index:40}
+.workspace-ui .creative-inventory header{padding:13px 17px}
+.workspace-ui .creative-inventory header h2{font-size:20px}
+.workspace-ui .creative-inventory nav{padding:9px 14px;gap:4px;flex-wrap:wrap;border-bottom:1px solid #354b3d}
+.workspace-ui .creative-inventory nav button{font-size:12px;min-width:72px}
+.workspace-ui .creative-inventory nav button.active{background:#d7c08a;color:#17271f}
+.workspace-ui .inventory-grid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:7px}
+.workspace-ui .inventory-grid button{min-height:90px;border-radius:7px;background:#23392c}
+.workspace-ui .inventory-grid button:hover{border-color:#d6c28f}
+.workspace-ui .workspace-intro{font-size:13px;color:#bccdbd;line-height:1.55}
+.workspace-ui .bookmark-row{display:flex;align-items:center;gap:5px;padding:10px 0;border-bottom:1px solid #35483c}
+.workspace-ui .bookmark-row>div{flex:1;min-width:0}
+.workspace-ui .bookmark-row strong,.workspace-ui .bookmark-row small{display:block;overflow-wrap:anywhere}
+.workspace-ui .bookmark-row strong{font-size:12px;color:#e5e9de}
+.workspace-ui .bookmark-row small{font-size:10px;color:#99b09e;margin-top:4px}
+.workspace-ui .bookmark-row button{font-size:11px;padding:6px 8px}
+.workspace-ui .graphics-profiles{padding:12px;margin:0 0 16px;border:1px solid #455e4c;border-radius:8px;background:#14261e}
+.workspace-ui .graphics-profiles h3{margin:0 0 8px}
+.workspace-ui .graphics-profiles .row{flex-wrap:wrap}
+.workspace-ui .graphics-profiles button{font-size:11px;padding:8px 5px;flex:1 1 72px}
+.workspace-ui #commandDialog{width:min(680px,calc(100vw - 28px));max-height:min(720px,calc(100vh - 40px));padding:0;border:1px solid #607969;background:#17271f;border-radius:13px;overflow:hidden}
+.workspace-ui #commandDialog[open]{display:flex;flex-direction:column}
+.workspace-ui #commandDialog::backdrop{background:#07130cbf;backdrop-filter:none}
+.workspace-ui .command-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 22px 12px}
+.workspace-ui .command-header h2{font-size:21px;margin:6px 0 0}
+.workspace-ui #commandClose{font-size:22px;background:transparent;border:0}
+.workspace-ui .command-input{display:flex;gap:9px;align-items:center;margin:0 20px 12px;padding:4px 11px;background:#102019;border:1px solid #78917c;border-radius:8px}
+.workspace-ui .command-input svg{width:19px;height:19px;flex-shrink:0;color:#b0c4b1}
+.workspace-ui .command-input input{font-size:15px;padding:11px 0;border:0;background:transparent;outline:none}
+.workspace-ui .command-input:focus-within{border-color:#d9c38c;box-shadow:0 0 0 2px #d9c38c20}
+.workspace-ui #commandResults{overflow:auto;min-height:100px;max-height:52vh;padding:2px 12px 10px}
+.workspace-ui .command-result{width:100%;display:flex;gap:12px;align-items:center;text-align:left;padding:10px 12px;margin:2px 0;border-radius:7px;border:1px solid transparent;background:transparent}
+.workspace-ui .command-result[aria-selected="true"]{background:#30473a;border-color:#5b755f;color:#f2e5c6}
+.workspace-ui .command-result>div{flex:1;min-width:0}
+.workspace-ui .command-result strong,.workspace-ui .command-result small{display:block;overflow-wrap:anywhere}
+.workspace-ui .command-result strong{font-size:13px;font-weight:600}
+.workspace-ui .command-result small{font-size:11px;margin-top:4px;color:#abc1af}
+.workspace-ui .command-result kbd{font-size:10px;color:#c9d5c8;white-space:nowrap}
+.workspace-ui .command-footer{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:12px 19px;border-top:1px solid #3b5042;font-size:10px;color:#9fb6a5}
+.workspace-ui .command-footer #commandCount{margin-left:auto}
+.workspace-ui .shortcut-guide{background:#13241c;border:1px solid #3f5747;border-radius:8px;padding:12px 16px}
+.workspace-ui .shortcut-guide h3{margin:0 0 8px}
+.workspace-ui .shortcut-guide>div{display:flex;align-items:center;gap:12px;margin:6px 0;color:#bed0bd;font-size:12px}
+.workspace-ui .shortcut-guide kbd{display:inline-block;min-width:95px;color:#e8d3a5}
+@media(max-width:1400px){
+ body.workspace-ui{--header:100px;--left:278px;--right:312px}
+ .workspace-ui .topbar{grid-template-columns:auto minmax(160px,1fr) auto;grid-template-areas:"brand campaign mode" "global global global";gap:6px 14px;padding:6px 14px}
+ .workspace-ui .workspace-global{justify-content:flex-end}
+ .workspace-ui .workspace-global .view-switch{margin-right:auto;display:flex;gap:8px;align-items:center}
+ .workspace-ui .workspace-global .view-switch>span{margin:0}
+}
+@media(max-width:1120px){
+ body.workspace-ui{--dock-l:0px;--dock-r:0px;--rail:68px}
+ body.workspace-ui[data-dock-left],body.workspace-ui[data-dock-right]{--dock-l:0px;--dock-r:0px}
+ body.workspace-ui .panel[data-docked="true"]{box-shadow:10px 0 24px #0007;z-index:27!important}
+ body.workspace-ui #inspectorPanel[data-docked="true"]{box-shadow:-10px 0 24px #0007}
+}
+@media(max-width:720px){
+ body.workspace-ui{--header:128px;--rail:56px;--left:min(292px,calc(100vw - 56px));--right:min(312px,calc(100vw - 56px))}
+ .workspace-ui .topbar{grid-template-columns:auto minmax(120px,1fr);grid-template-areas:"brand campaign" "mode mode" "global global";gap:4px;padding:5px 8px}
+ .workspace-ui .brand{font-size:10px;letter-spacing:.6px;gap:5px}
+ .workspace-ui .brand>b{font-size:22px}
+ .workspace-ui .brand .test-edition{font-size:7px}
+ .workspace-ui .workspace-overline{display:none}
+ .workspace-ui .topbar button{min-height:29px;padding:5px 7px;font-size:11px}
+ .workspace-ui .topbar .segmented button{min-height:27px;padding:5px 9px}
+ .workspace-ui .workspace-map select{font-size:11px;padding:5px}
+ .workspace-ui #mapsButton>span:not(.sr-only),.workspace-ui #save>span,.workspace-ui #commandLauncher>span,.workspace-ui #commandLauncher>kbd,.workspace-ui .view-switch>span{display:none!important}
+ .workspace-ui .workspace-global{gap:4px}
+ .workspace-ui .workspace-global .view-switch{min-width:0}
+ .workspace-ui .workspace-global .view-switch select{max-width:120px;padding:5px;font-size:11px}
+ .workspace-ui .rail{padding:5px 3px}
+ .workspace-ui .rail button{min-height:43px}
+ .workspace-ui .rail button>span{font-size:8px}
+ .workspace-ui .rail button>svg{width:19px;height:19px}
+ .workspace-ui .rail-section>small{font-size:7px;letter-spacing:.4px}
+ .workspace-ui .scene-chip{font-size:9px;left:8px;top:8px;max-width:calc(100% - 112px)}
+ .workspace-ui #performanceHud{right:8px;top:8px;min-width:96px}
+ .workspace-ui #performanceHud small{font-size:8px}
+ .workspace-ui #mapSize{display:none}
+ .workspace-ui .camera-bar{right:7px;bottom:39px;max-width:calc(100% - 14px)}
+ .workspace-ui .camera-bar #cameraModeLabel{display:none}
+ .workspace-ui .camera-bar button{font-size:13px;padding:4px 6px}
+ .workspace-ui #selectionBar{left:7px;bottom:109px}
+ .workspace-ui #selectionBar>div{max-width:110px}
+ .workspace-ui .statusbar #saveStatus{display:none}
+ .workspace-ui .statusbar{font-size:9px}
+ .workspace-ui .creative-inventory{width:calc(100% - 12px);top:6px;bottom:126px}
+ .workspace-ui .creative-inventory nav button{min-width:64px;font-size:10px;padding:6px}
+ .workspace-ui .inventory-grid{grid-template-columns:repeat(auto-fill,minmax(82px,1fr));padding:8px}
+ .workspace-ui .hotbar-wrap>button{min-width:35px}
+ .workspace-ui .hotbar-wrap>button span{display:none}
+ .workspace-ui #hotbar .hot-slot{width:36px;min-width:36px;height:44px}
+ .workspace-ui .creative-hint{font-size:9px}
+ .workspace-ui #creativeCapture{bottom:150px}
+ .workspace-ui #creativeCapture small{display:none}
+}
+body.workspace-ui.workspace-focus{--rail:0px;--dock-l:0px!important;--dock-r:0px!important}

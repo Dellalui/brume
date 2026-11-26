@@ -74,6 +74,7 @@ jobs:
             python3 scripts/prepare-npcs.py
           fi
           for f in dist/*.mjs; do node --check "$f"; done
+          npm install --ignore-scripts --no-audit --no-fund --package-lock=false
           npm test
           git add -- dist/assets/npc
           if ! git diff --cached --quiet; then
