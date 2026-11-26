@@ -1,5 +1,6 @@
 import * as W from './world.mjs';
 import * as V from './blocks.mjs';
+import {applyLiquidStyle,liquidPresetName} from './liquid-style.mjs';
 
 export const DOORS={oak:'Porte en chêne',iron:'Porte renforcée',glass:'Porte vitrée',bars:'Porte à barreaux'};
 export const snap=(n,step=.1)=>Number((Math.round(n/step)*step).toFixed(6));
@@ -15,7 +16,7 @@ export function defaultSlots(){return[
  {kind:'selection',name:'Sélection de zone'}
 ]}
 export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];return world.builder}
-export function itemName(item,world){if(!item)return'Vide';if(item.kind==='block')return W.BLOCKS[item.material]?.name||'Bloc';if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}
+export function itemName(item,world){if(!item)return'Vide';if(item.kind==='block')return liquidPresetName(item.material,item.liquidStyle)||(item.liquidStyle?((W.BLOCKS[item.material]?.name||'Bloc')+' personnalisée'):(W.BLOCKS[item.material]?.name||'Bloc'));if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}
 export function dimensions(item){const n=(v,f,max)=>Number.isFinite(+v)?W.clamp(snap(+v),.1,max):f;return{w:n(item.w,1,32),d:n(item.d,1,32),h:n(item.h,1,32)}}
 export function blockObject(material,x,y,z,w,d,h,yaw,id){return{...W.newObject('block',x,y,id),name:W.BLOCKS[material]?.name||'Bloc',material,w,d,height:h,baseZ:snap(z),facing:yaw,group:null,blocking:W.BLOCKS[material]?.solid!==false,blocksSight:!!W.BLOCKS[material]?.opaque,shadow:true,frameCount:1,frames:{},...(W.BLOCKS[material]?.emissive?{light:{radius:5,power:1,color:W.BLOCKS[material].accent||W.BLOCKS[material].top}}:{})}}
 const rotate=(x,y,a)=>({x:x*Math.cos(a)-y*Math.sin(a),y:x*Math.sin(a)+y*Math.cos(a)});
@@ -41,8 +42,9 @@ export function placement(item,point,world,id=()=>crypto.randomUUID()){
  if(item.kind==='schema')return schemaPlacement(world.schematics.find(s=>s.id===item.id),{x:point.x,y:point.y,z},yaw,id);
  if(item.kind==='block'){
   const a=blockObject(item.material,center.x-size.w/2,center.y-size.d/2,z,size.w,size.d,size.h,angle,id());
+  if(['water','lava'].includes(item.material))applyLiquidStyle(a,item.liquidStyle);
   if(item.shape!=='corner'||size.w<=size.d+.001)return[a];
-  const shift=rotate(-size.w/2+size.d/2,-size.w/2,angle),b=blockObject(item.material,center.x+shift.x-size.d/2,center.y+shift.y-(size.w-size.d)/2,z,size.d,size.w-size.d,size.h,angle,id());return[a,b];
+  const shift=rotate(-size.w/2+size.d/2,-size.w/2,angle),b=blockObject(item.material,center.x+shift.x-size.d/2,center.y+shift.y-(size.w-size.d)/2,z,size.d,size.w-size.d,size.h,angle,id());if(['water','lava'].includes(item.material))applyLiquidStyle(b,item.liquidStyle);return[a,b];
  }
  if(item.kind==='door'){
   let o=W.newObject('build_door',center.x-size.w/2,center.y-size.d/2,id());Object.assign(o,{name:DOORS[item.variant],variant:item.variant||'oak',w:size.w,d:size.d,height:size.h,baseZ:z,facing:angle,group:'architecture',open:false,blocksSight:item.variant!=='glass'&&item.variant!=='bars'});return[o];

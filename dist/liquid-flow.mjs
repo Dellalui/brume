@@ -1,4 +1,5 @@
 import * as W from './world.mjs';
+import {normalizeLiquidStyle,liquidVertexStyle} from './liquid-style.mjs';
 export const LIQUID_RANGE=Object.freeze({"water":7,"lava":3});
 export const MAX_FLOW_CELLS=12000;
 const EPS=0.000001,SIDES=[[1,0],[-1,0],[0,1],[0,-1]];
@@ -8,7 +9,7 @@ export function deriveLiquids(map,W,mode='mj',limit=MAX_FLOW_CELLS){
  const sources=[],irregular=[],flows=new Map(),slots=new Map(),sourceSlots=new Map(),columns=new Map(),bins=new Map(),groups=new Map((map.groups||[]).map(g=>[g.id,g.visible!==false]));
  const chunks=new Set(map.chunks||[]),active=(x,y)=>x>=0&&y>=0&&x<map.width&&y<map.height&&chunks.has(Math.floor(x/16)+','+Math.floor(y/16));
  const visible=(id,secret=false)=>groups.get(id)!==false&&(!secret||mode==='mj');
- const record=(x,y,z,h,kind,object=null)=>{if(!active(x,y))return;const s={x,y,z,h,kind,source:true,remaining:LIQUID_RANGE[kind]+1,object};sources.push(s);for(let t=z;t<z+h-EPS;t+=.5)sourceSlots.set(slot(x,y,t),s)};
+ const record=(x,y,z,h,kind,object=null)=>{if(!active(x,y))return;const s={x,y,z,h,kind,source:true,remaining:LIQUID_RANGE[kind]+1,object,style:normalizeLiquidStyle(kind,object?.liquidStyle)};sources.push(s);for(let t=z;t<z+h-EPS;t+=.5)sourceSlots.set(slot(x,y,t),s)};
  for(const [k,column] of Object.entries(map.blocks||{})){
   const [x,y]=k.split(',').map(Number);
   for(const [base,kind] of Object.entries(column)){
@@ -36,7 +37,7 @@ export function deriveLiquids(map,W,mode='mj',limit=MAX_FLOW_CELLS){
   if(aligned(b.x)&&aligned(b.y)&&aligned(b.w)&&aligned(b.h)&&aligned(z*2)&&aligned(h*2)&&aligned((o.facing||0)/(Math.PI/2))){
    for(let y=Math.round(b.y);y<Math.round(b.y+b.h);y++)for(let x=Math.round(b.x);x<Math.round(b.x+b.w);x++)
     for(let base=z;base<z+h-EPS;base+=1)record(x,y,base,Math.min(1,z+h-base),o.material,o);
-  }else irregular.push({x:o.x,y:o.y,z,h,kind:o.material,w:o.w,d:o.d,angle:o.facing||0,source:true,object:o});
+  }else irregular.push({x:o.x,y:o.y,z,h,kind:o.material,w:o.w,d:o.d,angle:o.facing||0,source:true,object:o,style:normalizeLiquidStyle(o.material,o.liquidStyle)});
  }
  const queue=sources.sort((a,b)=>a.z-b.z||a.y-b.y||a.x-b.x||a.kind.localeCompare(b.kind)).slice();
  const empty=(x,y,z)=>{
@@ -49,28 +50,28 @@ export function deriveLiquids(map,W,mode='mj',limit=MAX_FLOW_CELLS){
   }
   return !columns.get(k).some(([lo,hi])=>z<hi-EPS&&z+.5>lo+EPS)&&!slots.has(slot(x,y,z));
  };
- function strengthen(b,remaining,falling){
+ function strengthen(b,remaining,falling,style){
   const changed=remaining>b.remaining||falling&&!b.falling;
-  if(changed){b.remaining=Math.max(b.remaining,remaining);b.falling||=falling;queue.push(b)}
+  if(changed){if(remaining>b.remaining)b.style=style;b.remaining=Math.max(b.remaining,remaining);b.falling||=falling;queue.push(b)}
  }
- function add(x,y,z,kind,remaining,falling,h=1){
+ function add(x,y,z,kind,remaining,falling,h=1,style){
   const k=slot(x,y,z),old=slots.get(k);
-  if(old){if(old.kind!==kind||Math.abs(old.z-z)>EPS)return false;strengthen(old,remaining,falling);return true}
+  if(old){if(old.kind!==kind||Math.abs(old.z-z)>EPS)return false;strengthen(old,remaining,falling,style);return true}
   if(flows.size>=limit||!empty(x,y,z))return false;
   h=h===1&&empty(x,y,z+.5)?1:.5;
-  const b={x,y,z,h,kind,remaining,falling,source:false};
+  const b={x,y,z,h,kind,remaining,falling,source:false,style};
   flows.set(k,b);for(let t=z;t<z+h-EPS;t+=.5)slots.set(slot(x,y,t),b);queue.push(b);return true;
  }
  for(let i=0;i<queue.length&&i<sources.length+limit*8;i++){
   const b=queue[i],{x,y,z,kind,remaining}=b,below=slot(x,y,z-.5),existing=slots.get(below);
   if(sourceSlots.get(below)?.kind===kind)continue;
-  if(existing?.kind===kind){strengthen(existing,remaining,true);continue}
+  if(existing?.kind===kind){strengthen(existing,remaining,true,b.style);continue}
   if(empty(x,y,z-.5)){
    const full=empty(x,y,z-1);
-   if(add(x,y,z-(full?1:.5),kind,remaining,true,full?1:.5))continue;
+   if(add(x,y,z-(full?1:.5),kind,remaining,true,full?1:.5,b.style))continue;
   }
   if(remaining<=1)continue;
-  for(const [dx,dy] of SIDES)add(x+dx,y+dy,z,kind,remaining-1,false);
+  for(const [dx,dy] of SIDES)add(x+dx,y+dy,z,kind,remaining-1,false,1,b.style);
  }
  const cells=[...sources,...flows.values()];
  for(const b of cells){
@@ -137,14 +138,15 @@ export function liquidSurfaceProfiles(cells){
 }
 export function liquidMeshData(result,include=()=>true,slice=32){
  const cells=result.cells.filter(b=>b.z<slice),batches=new Map();
- const {profiles,at,normal}=liquidSurfaceProfiles(cells);
+ const {profiles,at,normal}=liquidSurfaceProfiles(cells),styleCache=new Map();
+ const styleOf=b=>{const k=b.style||b.kind;if(!styleCache.has(k))styleCache.set(k,liquidVertexStyle(b.kind,b.style));return styleCache.get(k)};
  const length=v=>Math.hypot(...v),cross=(a,b,c)=>{const u=b.map((n,i)=>n-a[i]),v=c.map((n,i)=>n-a[i]);return [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]};
  function triangle(b,p,ns){
   const n=cross(...p),l=length(n);if(l<EPS)return;
   const k=b.kind+'|'+Math.floor(b.x/16)+','+Math.floor(b.y/16);
-  if(!batches.has(k))batches.set(k,{kind:b.kind,positions:[],normals:[]});
-  const batch=batches.get(k),flat=n.map(x=>x/l);
-  for(let i=0;i<3;i++){batch.positions.push(...p[i]);batch.normals.push(...(ns?.[i]||flat))}
+  if(!batches.has(k))batches.set(k,{kind:b.kind,positions:[],normals:[],colorA:[],colorB:[],styleParams:[]});
+  const batch=batches.get(k),flat=n.map(x=>x/l),style=styleOf(b);
+  for(let i=0;i<3;i++){batch.positions.push(...p[i]);batch.normals.push(...(ns?.[i]||flat));batch.colorA.push(...style.a);batch.colorB.push(...style.b);batch.styleParams.push(...style.params)}
  }
  function quad(b,p,ns){for(const indices of [[0,1,2],[0,2,3]])triangle(b,indices.map(i=>p[i]),ns&&indices.map(i=>ns[i]))}
  const flat=y=>[y,y],value=(l,t)=>l[0]+(l[1]-l[0])*t;
