@@ -1,6 +1,6 @@
 // Fictional construction-mode projectiles. No per-frame physics or world mutation.
 export const PRESETS=Object.freeze([{"id":"blast","name":"Explosion classique","color":"#ffb25c","symbol":"✹"},{"id":"fire","name":"Explosion de feu","color":"#ff6230","symbol":"✦"},{"id":"ice","name":"Explosion de givre","color":"#9cdeff","symbol":"❋"},{"id":"storm","name":"Décharge de foudre","color":"#d6edff","symbol":"ϟ"},{"id":"arcane","name":"Explosion arcanique","color":"#c08aff","symbol":"✧"},{"id":"dust","name":"Impact de poussière","color":"#c2a581","symbol":"◉"}].map(Object.freeze));
-export const MAX_RADIUS=6,MAX_REMOVALS=512,MAX_THROWS=3,IMPACT_MS=1800;
+export const MAX_RADIUS=6,MAX_REMOVALS=512,MAX_THROWS=3,IMPACT_MS=3000;
 export function throwConfig(item){
  const preset=PRESETS.find(p=>p.id===item?.preset)||PRESETS[0];
  const power=Number.isFinite(Number(item?.power))?Math.max(1,Math.min(MAX_RADIUS,Math.round(Number(item.power)))):3;

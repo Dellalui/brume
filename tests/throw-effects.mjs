@@ -19,8 +19,8 @@ const dense=W.newMap('dense','Dense',32,32);W.prepareBlocks(dense);for(let x=9;x
 const large=planImpact(dense,{x:16,y:16,z:6},{power:6},W);assert(large.limited);assert.equal(large.voxels.length,MAX_REMOVALS);
 let impacts=0;const queue=createThrowQueue(),from={x:2000,y:2000,z:5};
 assert(!queue.launch(map,false,from,at,{},W,0));for(let i=0;i<MAX_THROWS;i++)assert(queue.launch(map,true,from,at,{power:2},W,0));assert(!queue.launch(map,true,from,at,{},W,0));
-assert(queue.advance(map,true,50,()=>impacts++).every(p=>p.phase==='flight'));assert.equal(impacts,0);assert(queue.advance(map,true,500,()=>impacts++).every(p=>p.phase==='impact'));assert.equal(impacts,MAX_THROWS);queue.advance(map,true,1000,()=>impacts++);assert.equal(impacts,MAX_THROWS);assert.equal(queue.advance(map,true,2400,()=>impacts++).length,0);
-queue.launch(map,true,from,at,{},W,2500);assert.equal(queue.advance({...map},true,3000,()=>impacts++).length,0);assert.equal(impacts,MAX_THROWS);
+assert(queue.advance(map,true,50,()=>impacts++).every(p=>p.phase==='flight'));assert.equal(impacts,0);assert(queue.advance(map,true,500,()=>impacts++).every(p=>p.phase==='impact'));assert.equal(impacts,MAX_THROWS);queue.advance(map,true,1000,()=>impacts++);assert.equal(impacts,MAX_THROWS);assert.equal(queue.advance(map,true,3600,()=>impacts++).length,0);
+queue.launch(map,true,from,at,{},W,3700);assert.equal(queue.advance({...map},true,4200,()=>impacts++).length,0);assert.equal(impacts,MAX_THROWS);
 // Exercise the vendored Quarks burst generators with real Three scene objects.
 const fx=createEffects(()=>canvasStub(128,128)),visuals=createThrowVisuals(fx),scene=new T.Scene(),camera=new T.PerspectiveCamera();scene.add(visuals.group);
 for(const preset of PRESETS){
