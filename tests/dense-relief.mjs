@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import * as W from '../dist/world.mjs';
+import {reliefPlan,reliefSignature} from '../dist/relief-batches.mjs';
+import {buildBlockOcclusion} from '../dist/block-occlusion.mjs';
+import {fixture} from '../test-support/three-fixture.mjs';
+const map=W.newMap('dense','Dense',64,64);W.prepareBlocks(map);
+for(let x=4;x<44;x++)for(let y=4;y<44;y++)for(let z=0;z<5;z++)W.setBlock(map,x,y,z,'stone');
+const occ=buildBlockOcclusion(map),cells=[];
+for(const [key,column]of Object.entries(map.blocks)){const [x,y]=key.split(',').map(Number);for(const [z,kind]of Object.entries(column))if(!occ.hiddenVoxels.has(key+','+z))cells.push({x,y,z:+z,h:1})}
+assert.equal(cells.length,3668);const groups=new Map([['stone',cells]]),plan=reliefPlan(groups,occ.fullUnits,false,()=>true);
+assert.equal(plan.reduce((n,p)=>n+p.cells.length*(p.face===null?12:2),0),8000);
+assert(reliefPlan(groups,occ.fullUnits,true,()=>true).every(p=>p.face===null));
+const half={x:4,y:4,z:0,h:.5},halfPlan=reliefPlan(new Map([['stone',[half]]]),occ.fullUnits,false,()=>true);assert.equal(halfPlan[0].face,null);
+const {r}=fixture();Object.assign(map.camera,{mode:'fly',fly:{x:24,y:12,z:24}});const opts={map,mode:'mj',selection:null,images:new Map(),lights:W.buildLights(map),vision:new Set(),explored:new Set(),terrainEpoch:1,path:[]};r.render(opts);
+const meshes=()=>new Map(r.debug().reliefGroup.children.filter(m=>m.userData.reliefBatch&&!m.userData.cutOverlay).map(m=>[m.userData.reliefBatch,m]));
+const before=meshes();assert(before.size>1);assert(!r.debug().reliefGroup.children.some(m=>m.userData.cutOverlay));
+map.camera.angle+=Math.PI/12;r.render(opts);for(const [k,m]of before)assert.equal(meshes().get(k),m,'rotation reuses mesh');
+W.setBlock(map,4,4,0,'wood');opts.terrainEpoch++;r.render(opts);const after=meshes();
+assert([...before].some(([k,m])=>after.get(k)===m&&k.includes('2,2')),'untouched sector retains mesh');
+r.dispose();console.log('PASS: 8000-block pile, 8000 exterior triangles instead of 44016, cutaway, half-blocks and retained chunk meshes.');

@@ -26,8 +26,8 @@ export function clearBody(map,x,y,z,height=1.6){
  }
  return true;
 }
-export function surfaces(map,x,y){let c=map.blocks?.[key(x,y)]||{},zs=[groundAt(map,x,y),...blockTops(map,x,y),...Object.keys(c).filter(z=>BLOCKS[c[z]]?.solid).map(z=>+z+blockSize(map,x,y,+z))];return zs.filter(z=>clearBody(map,x,y,z)).sort((a,b)=>a-b)}
-export function surfaceNear(map,x,y,z=0,step=Infinity){return surfaces(map,x,y).filter(h=>Math.abs(h-z)<=step).sort((a,b)=>Math.abs(a-z)-Math.abs(b-z)||b-a)[0]}
+export function surfaces(map,x,y,height=1.6){let c=map.blocks?.[key(x,y)]||{},zs=[groundAt(map,x,y),...blockTops(map,x,y),...Object.keys(c).filter(z=>BLOCKS[c[z]]?.solid).map(z=>+z+blockSize(map,x,y,+z))];return [...new Set(zs)].filter(z=>clearBody(map,x,y,z,height)).sort((a,b)=>a-b)}
+export function surfaceNear(map,x,y,z=0,step=Infinity,height=1.6){return surfaces(map,x,y,height).filter(h=>Math.abs(h-z)<=step).sort((a,b)=>Math.abs(a-z)-Math.abs(b-z)||b-a)[0]}
 export function digGround(map,x,y,amount=1){if(![x,y,amount].every(Number.isFinite))return false;x=Math.floor(x);y=Math.floor(y);if(x<0||y<0||x>=map.width||y>=map.height||!map.chunks.includes(Math.floor(x/16)+','+Math.floor(y/16)))return false;let old=groundAt(map,x,y),next=Math.max(MIN_BLOCK_HEIGHT,old-(amount===.5?.5:1));if(next===old)return false;map.ground??={};map.ground[key(x,y)]=next;map.blockRevision=(map.blockRevision||0)+1;return true}
 export function setBlock(map,x,y,z,material,height=1){if(![x,y,z,height].every(Number.isFinite))return false;x=Math.floor(x);y=Math.floor(y);z=Math.floor(z*2)/2;height=height===.5?.5:1;if(x<0||y<0||x>=map.width||y>=map.height||z<MIN_BLOCK_HEIGHT||z+height>MAX_BLOCK_HEIGHT||!map.chunks.includes(Math.floor(x/16)+','+Math.floor(y/16)))return false;if(material&&!BLOCKS[material])return false;prepareBlocks(map);let k=key(x,y),base=blockBase(map,x,y,z);if(!material){if(base===null)return false;delete map.blocks[k][base];if(map.blockHeights)delete map.blockHeights[k+','+base];if(!Object.keys(map.blocks[k]).length)delete map.blocks[k]}else{if(base===z&&map.blocks[k]?.[base]===material&&blockSize(map,x,y,z)===height)return false;map.blocks[k]??={};for(let old of Object.keys(map.blocks[k]))if(+old<z+height&&+old+blockSize(map,x,y,+old)>z){delete map.blocks[k][old];if(map.blockHeights)delete map.blockHeights[k+','+old]}map.blocks[k][z]=material;map.blockHeights??={};if(height===.5)map.blockHeights[k+','+z]=.5;else delete map.blockHeights[k+','+z];if(z<groundAt(map,x,y)){map.ground??={};map.ground[k]=z}}
 map.blockRevision=(map.blockRevision||0)+1;return true}
@@ -58,16 +58,20 @@ export function voxelRayClear(map,a,b,z0,z1){
 export function* voxelPath(map,actor,destination,legal,Heap){
  if(![actor.x,actor.y,destination.x,destination.y].every(Number.isFinite)||destination.z!==undefined&&!Number.isFinite(destination.z))return [];
  const active=new Set(map.chunks),surfaceCache=new Map(),edgeCache=new Map();
- const levels=(x,y)=>{const k=key(x,y);if(!surfaceCache.has(k))surfaceCache.set(k,x<0||y<0||x>=map.width||y>=map.height||!active.has(Math.floor(x/16)+','+Math.floor(y/16))?[]:surfaces(map,x,y));return surfaceCache.get(k)};
+ const levels=(x,y)=>{const k=key(x,y);if(!surfaceCache.has(k))surfaceCache.set(k,x<0||y<0||x>=map.width||y>=map.height||!active.has(Math.floor(x/16)+','+Math.floor(y/16))?[]:surfaces(map,x,y,actor.bodyHeight||1.6));return surfaceCache.get(k)};
  const encode=p=>p.x+','+p.y+','+p.z;
  const canStep=(a,b)=>{const k=encode(a)+':'+encode(b);if(!edgeCache.has(k))edgeCache.set(k,legal(a,b));return edgeCache.get(k)};
- const start={x:Math.floor(actor.x),y:Math.floor(actor.y),z:surfaceNear(map,actor.x,actor.y,actor.voxelZ??blockHeight(map,actor.x,actor.y))};
+ const start={x:Math.floor(actor.x),y:Math.floor(actor.y),z:surfaceNear(map,actor.x,actor.y,actor.voxelZ??blockHeight(map,actor.x,actor.y),Infinity,actor.bodyHeight||1.6)};
  const end={x:Math.floor(destination.x),y:Math.floor(destination.y)},targetZ=destination.z;
  // Reject occupied/impossible goals before exploring the entire map.
  const targets=levels(end.x,end.y).filter(z=>(targetZ===undefined||Math.abs(z-targetZ)<.1)&&canStep({...end,z},{...end,z}));
  if(start.z===undefined||!targets.length)return [];
+ if(start.x===end.x&&start.y===end.y&&targets.includes(start.z))return [start];
+ // A fully isolated roof/ledge cannot be entered. Avoid searching the whole map.
+ function hasLink(p,entering){for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){if(!dx&&!dy)continue;const x=p.x+dx,y=p.y+dy;for(const z of levels(x,y)){if(Math.abs(z-p.z)>1)continue;const q={x,y,z};if(entering?canStep(q,p):canStep(p,q))return true}}return false}
+ if(!hasLink(start,false)||!targets.some(z=>hasLink({...end,z},true)))return [];
  const origin=encode(start),open=new Heap(),cost=new Map([[origin,0]]),parents=new Map(),closed=new Set();
- const h=p=>{const dx=Math.abs(end.x-p.x),dy=Math.abs(end.y-p.y);return Math.max(dx,dy)+(Math.SQRT2-1)*Math.min(dx,dy)};
+ const h=p=>{const dx=Math.abs(end.x-p.x),dy=Math.abs(end.y-p.y);return Math.max(dx,dy)+(Math.SQRT2-1)*Math.min(dx,dy)+.15*Math.min(...targets.map(z=>Math.abs(z-p.z)))};
  open.push({...start,g:0,f:h(start)});let n=0;
  while(open.size&&n++<65536){
   if(n%128===0)yield null;

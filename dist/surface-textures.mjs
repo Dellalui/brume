@@ -103,6 +103,7 @@ varying float brumesSurfaceFaceV;
 varying float brumesSurfaceHeight;
 uniform float brumesSurfaceScale;
 uniform float brumesSurfaceNatural;
+uniform float brumesSurfaceQuality;
 uniform float brumesSurfaceDetail;
 uniform vec3 brumesOreAccent;
 
@@ -124,7 +125,7 @@ vec4 brumesTileSample(sampler2D image,vec2 uv,ivec2 cell,vec2 dx,vec2 dy){
  return textureGrad(image,brumesQuarterTurn(uv,turn)+offset,brumesQuarterTurn(dx,turn),brumesQuarterTurn(dy,turn));
 }
 vec4 brumesSurfaceSample(sampler2D image,vec2 uv,float natural){
- if(natural<0.5)return texture2D(image,uv);
+ if(natural<0.5||brumesSurfaceQuality<0.5)return texture2D(image,uv);
  // Neighboring patches share the same samples at each boundary. Rotations
  // therefore never introduce the hard square seams of per-cell UV rotation.
  ivec2 cell=ivec2(floor(uv));
@@ -205,7 +206,7 @@ function shaderMapBody(spec){
 }
 
 export function createSurfaceLibrary({createCanvas,onReady=()=>{},anisotropy=4}={}){
- const entries=new Map(),records=new Map();let disposed=false;
+ const entries=new Map(),records=new Map(),quality={value:1};let disposed=false;
  const maxAnisotropy=Math.max(1,Math.min(8,Number(anisotropy)||1));
  const makeCanvas=createCanvas||(()=>globalThis.document?.createElement?.('canvas'));
  function configure(texture,key,state){
@@ -273,7 +274,7 @@ export function createSurfaceLibrary({createCanvas,onReady=()=>{},anisotropy=4}=
   material.metalness=def.metalness;
   if(options.detailOnly!==true)material.color.set(def.color);
   const uniforms={
-   brumesSurfaceScale:{value:def.scale},brumesSurfaceNatural:{value:def.natural?1:0},
+   brumesSurfaceScale:{value:def.scale},brumesSurfaceNatural:{value:def.natural?1:0},brumesSurfaceQuality:quality,
    brumesSurfaceDetail:{value:spec.detailOnly?1:0},brumesOreAccent:{value:new T.Color(def.ore||'#ffffff')}
   };
   if(spec.grassCap)uniforms.brumesGrassTexture={value:texture('grass')};
@@ -309,7 +310,7 @@ export function createSurfaceLibrary({createCanvas,onReady=()=>{},anisotropy=4}=
   material.needsUpdate=true;
   return material;
  }
- return{texture,apply,
+ return{texture,apply,setQuality(value){quality.value=value==='fast'?0:1},
   stats(){return{textures:entries.size,materials:records.size,loaded:[...entries.values()].filter(e=>e.state==='loaded').length,pending:[...entries.values()].filter(e=>e.state==='loading').length,failed:[...entries.values()].filter(e=>e.state==='error').length};},
   dispose(){if(disposed)return;disposed=true;for(const entry of entries.values()){if(entry.image){entry.image.onload=entry.image.onerror=null;}entry.texture.dispose();}entries.clear();for(const[material,record]of records)material.removeEventListener('dispose',record.release);records.clear();}
  };

@@ -39,5 +39,5 @@ export function buildBlockOcclusion(map,{region=null,slice=32,mode='mj'}={}){
   }
   if(enclosed)(box.voxel?hiddenVoxels:hiddenObjects).add(box.id);
  }
- return{hiddenObjects,hiddenVoxels,candidates:boxes.length};
+ return{hiddenObjects,hiddenVoxels,fullUnits,candidates:boxes.length};
 }
