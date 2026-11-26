@@ -8,7 +8,7 @@ export function mountLiquidControls(root,kind,style,onChange,{disabled=false}={}
  const select=doc.createElement('select'),custom=doc.createElement('option');custom.value='custom';custom.textContent='Personnalisé';select.append(custom);
  const choices=LIQUID_PRESETS.filter(p=>p.kind===kind);
  for(const p of choices){const option=doc.createElement('option');option.value=p.id;option.textContent=p.name;select.append(option)}
- select.value=choices.find(p=>p.name===liquidPresetName(kind,s))?.id||'custom';select.disabled=disabled;
+ const selectedId=choices.find(p=>p.name===liquidPresetName(kind,s))?.id||'custom';for(const option of select.children)if(option.value===selectedId)option.setAttribute('selected','');select.disabled=disabled;
  function label(text,el){const l=doc.createElement('label');l.textContent=text;l.append(el);return l}
  function update(next){if(!disabled)onChange(normalizeLiquidStyle(kind,next))}
  select.onchange=()=>{const p=choices.find(p=>p.id===select.value);if(p)update(p)};
