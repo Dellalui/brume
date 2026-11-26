@@ -4,7 +4,8 @@ export const MAX_RADIUS=6,MAX_REMOVALS=512,MAX_THROWS=3,IMPACT_MS=3000;
 export function throwConfig(item){
  const preset=PRESETS.find(p=>p.id===item?.preset)||PRESETS[0];
  const power=Number.isFinite(Number(item?.power))?Math.max(1,Math.min(MAX_RADIUS,Math.round(Number(item.power)))):3;
- return {...preset,power,radius:power,destroy:item?.destroy!==false};
+ const visualScale=Number.isFinite(Number(item?.visualScale))?Math.max(.75,Math.min(2,Number(item.visualScale))):1.25;
+ return {...preset,power,radius:power,destroy:item?.destroy!==false,visualScale,visualQuality:item?.visualQuality==='high'?'high':'auto'};
 }
 export function distanceToBox(point,x,y,z,w,d,h,angle=0){
  const dx=point.x-x-w/2,dy=point.y-y-d/2,c=Math.cos(angle),s=Math.sin(angle);
