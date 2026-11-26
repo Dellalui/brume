@@ -1,0 +1,17 @@
+MATERIAL TEXTURES — CC0 1.0 UNIVERSAL
+
+The original diffuse/color JPEG assets in this directory are provided by
+Poly Haven and ambientCG under Creative Commons CC0 1.0 Universal.
+Their individual origins and exact download URLs are recorded in sources.json
+and SOURCES.md. The original image bytes are unchanged.
+
+Official provider statements:
+https://polyhaven.com/license
+https://docs.ambientcg.com/license/
+
+CC0 1.0 legal text:
+https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+Attribution is not required by CC0. Provenance is retained for traceability.
+This notice applies to these material images, not to unrelated application code
+or to other bundled assets with their own licences.

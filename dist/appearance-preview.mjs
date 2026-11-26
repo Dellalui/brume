@@ -1,0 +1,18 @@
+import * as T from './vendor/three.module.min.js';
+export const wrapAngle=a=>((a%360)+360)%360;
+export const angleFrame=(angle,count)=>Math.round(wrapAngle(angle)/360*count)%count;
+// One small, reusable WebGL surface. Render only when the user changes the preview.
+export function createAppearanceViewer(doc=document){
+ const canvas=doc.createElement('canvas');canvas.className='portrait-canvas';canvas.setAttribute('aria-hidden','true');
+ let gpu;try{gpu=new T.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power'});gpu.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,1.5));gpu.setSize(280,260,false)}catch{}
+ const scene=new T.Scene(),camera=new T.PerspectiveCamera(34,280/260,.1,30),person=new T.Group();scene.add(person);scene.add(new T.HemisphereLight(0xeaf5eb,0x293f34,2));let light=new T.DirectionalLight(0xffffff,2);light.position.set(2,4,3);scene.add(light);
+ const material=new T.MeshStandardMaterial({color:0x96b8a8,roughness:.85}),dark=new T.MeshStandardMaterial({color:0x304f43,roughness:.9});
+ function part(g,x,y,z,mat=material){let m=new T.Mesh(g,mat);m.position.set(x,y,z);person.add(m);return m}
+ part(new T.SphereGeometry(.19,16,12),0,1.62,0);part(new T.CylinderGeometry(.22,.28,.65,10),0,1.08,0);for(let x of [-.13,.13])part(new T.CylinderGeometry(.085,.07,.65,8),x,.43,0);for(let x of [-.34,.34])part(new T.CylinderGeometry(.065,.08,.62,8),x,1.04,0);part(new T.ConeGeometry(.07,.15,8),0,1.61,-.2,dark).rotation.x=-Math.PI/2;
+ let base=new T.Mesh(new T.CylinderGeometry(.62,.66,.07,48),dark);base.position.y=.035;scene.add(base);
+ let ring=new T.Mesh(new T.RingGeometry(.76,.775,64),new T.MeshBasicMaterial({color:0xbca977,side:T.DoubleSide,transparent:true,opacity:.7}));ring.rotation.x=-Math.PI/2;ring.position.y=.02;scene.add(ring);
+ let arrow=new T.Mesh(new T.ConeGeometry(.095,.24,3),new T.MeshBasicMaterial({color:0xe2c789}));arrow.rotation.x=-Math.PI/2;arrow.position.set(0,.05,-.83);scene.add(arrow);
+ let sprite=new T.Mesh(new T.PlaneGeometry(1,1),new T.MeshBasicMaterial({transparent:true,alphaTest:.03,side:T.DoubleSide}));scene.add(sprite);let texture=null,lastImage=null,host=null;
+ const fallback=doc.createElement('img');fallback.className='portrait-fallback';fallback.alt='Aperçu du personnage';
+ return{mount(el){host=el;el.replaceChildren(gpu?canvas:fallback)},update({o,image,angle}){let a=angle*Math.PI/180;camera.position.set(Math.sin(a)*3.5,1.85,-Math.cos(a)*3.5);camera.lookAt(0,.9,0);if(image!==lastImage){texture?.dispose();texture=image?new T.CanvasTexture(image):null;if(texture)texture.colorSpace=T.SRGBColorSpace;sprite.material.map=texture;sprite.material.needsUpdate=true;lastImage=image}person.visible=!image;sprite.visible=!!image;if(image){let h=1.8,w=Math.min(2.7,h*image.width/image.height);sprite.scale.set(w,h,1);sprite.position.set(0,.95,0);sprite.rotation.set(0,o.tokenFixed?Math.PI:Math.PI-a,0);if(o.flat){sprite.rotation.set(-Math.PI/2,0,0);sprite.position.y=.09;sprite.scale.set(1.2,1.2,1)}sprite.material.opacity=o.opacity??1;if(texture){let flip=!!o.flip !== !!(o.tokenFixed&&!o.flat&&Math.cos(a)<0);texture.repeat.x=flip?-1:1;texture.offset.x=flip?1:0}}if(gpu)gpu.render(scene,camera);else if(image){fallback.src=image.src;fallback.hidden=false;fallback.style.transform=`perspective(500px) rotateY(${o.tokenFixed?angle:Math.sin(a)*10}deg)`}else{fallback.hidden=true;host?.setAttribute('data-empty','Aperçu 3D indisponible · ajoutez une image')}},dispose(){texture?.dispose();scene.traverse(n=>{n.geometry?.dispose()});material.dispose();dark.dispose();ring.material.dispose();arrow.material.dispose();sprite.material.dispose();gpu?.dispose();gpu?.forceContextLoss()}};
+}
