@@ -7,7 +7,7 @@ export const isLiquid=k=>k==='water'||k==='lava';
 const col=(x,y)=>x+','+y,slot=(x,y,z)=>x+','+y+','+Math.round(z*2),aligned=n=>Math.abs(n-Math.round(n))<EPS;
 export function deriveLiquids(map,W,mode='mj',limit=MAX_FLOW_CELLS){
  const sources=[],irregular=[],flows=new Map(),slots=new Map(),sourceSlots=new Map(),columns=new Map(),bins=new Map(),groups=new Map((map.groups||[]).map(g=>[g.id,g.visible!==false]));
- const chunks=new Set(map.chunks||[]),active=(x,y)=>x>=0&&y>=0&&x<map.width&&y<map.height&&chunks.has(Math.floor(x/16)+','+Math.floor(y/16));
+ const active=(x,y)=>W.activeCell(map,x,y);
  const visible=(id,secret=false)=>groups.get(id)!==false&&(!secret||mode==='mj');
  const record=(x,y,z,h,kind,object=null)=>{if(!active(x,y))return;const s={x,y,z,h,kind,source:true,remaining:LIQUID_RANGE[kind]+1,object,style:normalizeLiquidStyle(kind,object?.liquidStyle)};sources.push(s);for(let t=z;t<z+h-EPS;t+=.5)sourceSlots.set(slot(x,y,t),s)};
  for(const [k,column] of Object.entries(map.blocks||{})){
@@ -39,6 +39,7 @@ export function deriveLiquids(map,W,mode='mj',limit=MAX_FLOW_CELLS){
     for(let base=z;base<z+h-EPS;base+=1)record(x,y,base,Math.min(1,z+h-base),o.material,o);
   }else irregular.push({x:o.x,y:o.y,z,h,kind:o.material,w:o.w,d:o.d,angle:o.facing||0,source:true,object:o,style:normalizeLiquidStyle(o.material,o.liquidStyle)});
  }
+ if(!sources.length&&!irregular.length)return {cells:[],irregular:[],generated:0,limited:false};
  const queue=sources.sort((a,b)=>a.z-b.z||a.y-b.y||a.x-b.x||a.kind.localeCompare(b.kind)).slice();
  const empty=(x,y,z)=>{
   if(!active(x,y)||z< -16-EPS||z+.5>32+EPS||z<W.groundAt(map,x,y)-EPS)return false;
@@ -208,9 +209,9 @@ export function liquidMeshData(result,include=()=>true,slice=32){
 export function createLiquidCache(){
  const cache=new WeakMap();
  return (map,W,mode)=>{
-  const key=JSON.stringify([mode,map.width,map.height,map.blockRevision,map.buildRevision,map.groups?.map(g=>[g.id,g.visible]),map.chunks]);
+  const key=JSON.stringify([mode,map.width,map.height,map.blockRevision,map.buildRevision,map.groups?.map(g=>[g.id,g.visible]),map.chunks.length]);
   let c=cache.get(map);
-  if(c?.key===key)return c.result;
-  const result=deriveLiquids(map,W,mode);cache.set(map,{key,result});return result;
+  if(c?.key===key&&c.chunks===map.chunks)return c.result;
+  const result=deriveLiquids(map,W,mode);cache.set(map,{key,chunks:map.chunks,result});return result;
  };
 }

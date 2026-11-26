@@ -198,3 +198,6 @@ body.workspace-ui.workspace-focus{--rail:0px;--dock-l:0px!important;--dock-r:0px
 
 /* Do not blur a continuously animated WebGL scene behind modal dialogs. */
 .workspace-ui dialog::backdrop{backdrop-filter:none}
+
+/* Extension controls are a local tool, not buttons projected from far borders. */
+body.workspace-ui #mapActions{position:absolute;inset:70px 12px auto auto;width:224px;display:flex;flex-direction:column;gap:8px;pointer-events:auto;padding:12px;border:1px solid #435a49;border-radius:8px;background:#17271fee;z-index:8;box-shadow:0 8px 24px #0005}body.workspace-ui #mapActions[hidden]{display:none!important}.workspace-ui #mapActions strong{font-size:13px;color:#e7d3a6}.workspace-ui #mapActions small{font-size:11px;color:#adbdac}.workspace-ui #mapActions label{font-size:11px;margin:0}.workspace-ui #mapActions button{position:static;transform:none;box-shadow:none;white-space:normal;min-width:0;font-size:12px}.workspace-ui #mapActions .row button{flex:1}.workspace-ui #mapActions select{margin-top:4px}

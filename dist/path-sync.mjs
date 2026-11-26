@@ -11,10 +11,11 @@ function dictDelta(old,next){
 }
 const hasDelta=d=>d.remove.length>0||Object.keys(d.set).length>0;
 export function createPathSync(){
- let mapRef=null,prev=null,staticKey=null,revision=0,staticObjects=[],staticFields=null;
- return {reset(){mapRef=null;prev=null;staticKey=null;staticFields=null;staticObjects=[]},prepare(map){
-  const key=encode([map.blockRevision,map.buildRevision,map.width,map.height,map.editLevel,map.levelHeight,map.chunks]);
-  if(map!==mapRef||key!==staticKey||!staticFields){
+ let mapRef=null,prev=null,staticKey=null,revision=0,staticObjects=[],staticFields=null,chunksRef=null;
+ return {reset(){mapRef=null;prev=null;staticKey=null;staticFields=null;staticObjects=[];chunksRef=null},prepare(map){
+  const key=encode([map.blockRevision,map.buildRevision,map.width,map.height,map.editLevel,map.levelHeight,map.chunks.length]);
+  if(map!==mapRef||key!==staticKey||chunksRef!==map.chunks||!staticFields){
+   chunksRef=map.chunks;
    staticFields=structuredClone({id:map.id,width:map.width,height:map.height,editLevel:map.editLevel,levelHeight:map.levelHeight,chunks:map.chunks,blockRevision:map.blockRevision,buildRevision:map.buildRevision,...Object.fromEntries(DICTS.filter(k=>map[k]!==undefined).map(k=>[k,map[k]]))});
    staticObjects=map.objects.filter(o=>!W.character(o)).map(collisionObject).filter(o=>o.blocking||o.type==='block'||o.type==='platform'||o.type==='balcony');
    staticKey=key;
