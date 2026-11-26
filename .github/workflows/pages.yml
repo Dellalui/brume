@@ -68,11 +68,21 @@ jobs:
       - name: Configure Pages
         if: steps.pages.outputs.enabled == 'true'
         uses: actions/configure-pages@v5
+      - name: Prepare consistent project URL
+        if: steps.pages.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pages-site"
+          cp index.html .nojekyll "$RUNNER_TEMP/pages-site/"
+          cp -a dist "$RUNNER_TEMP/pages-site/dist"
+          test -s "$RUNNER_TEMP/pages-site/index.html"
+          test -s "$RUNNER_TEMP/pages-site/dist/index.html"
       - name: Upload site
         if: steps.pages.outputs.enabled == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist/
+          path: ${{ runner.temp }}/pages-site
   deploy:
     if: needs.build.outputs.pages_enabled == 'true'
     needs: build
@@ -84,3 +94,28 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify public entrypoint and game assets
+        env:
+          SITE_URL: ${{ steps.deployment.outputs.page_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${SITE_URL%/}"
+          query="?version=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$RUNNER_TEMP/smoke"
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSL --max-time 15 "$base/$query" -o "$RUNNER_TEMP/smoke/root.html" &&
+               grep -Fq 'dist/index.html' "$RUNNER_TEMP/smoke/root.html" &&
+               curl -fsSL --max-time 15 "$base/dist/index.html$query" -o "$RUNNER_TEMP/smoke/game.html" &&
+               grep -Fq 'id="app"' "$RUNNER_TEMP/smoke/game.html" &&
+               grep -Fq 'src="editor.mjs"' "$RUNNER_TEMP/smoke/game.html" &&
+               curl -fsSL --max-time 15 "$base/dist/editor.mjs$query" -o "$RUNNER_TEMP/smoke/editor.mjs" &&
+               curl -fsSL --max-time 15 "$base/dist/assets/materials/grass.jpg$query" -o "$RUNNER_TEMP/smoke/grass.jpg" &&
+               python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); assert (p/"editor.mjs").stat().st_size>1000; assert (p/"grass.jpg").read_bytes().startswith(bytes.fromhex("ffd8"))' "$RUNNER_TEMP/smoke"; then
+              echo "Public game HTML, entry module and grass texture verified: $base/dist/index.html"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::Published site did not pass the HTTP checks."
+          exit 1
