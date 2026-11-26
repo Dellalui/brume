@@ -13,6 +13,7 @@ on:
       - 'tests/npc-presets.mjs'
       - 'tests/shadow-stability.mjs'
       - 'tests/block-visibility.mjs'
+      - 'tests/liquid-flow.mjs'
       - 'recovery/import-release.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -71,6 +72,8 @@ jobs:
           node --check dist/scene.mjs
           node tests/shadow-stability.mjs
           node tests/block-visibility.mjs
+          node tests/liquid-flow.mjs
+          node --check dist/liquid-flow.mjs
           git add -- dist/assets/npc
           if ! git diff --cached --quiet; then
             git config user.name 'github-actions[bot]'
