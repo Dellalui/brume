@@ -1,0 +1,53 @@
+import * as T from './vendor/three.module.min.js';
+export function buildRayBuckets(bounds,cellSize=4){
+ const bins=new Map();
+ for(let i=0;i<bounds.length;i++){
+  const b=bounds[i],key=b.min.map((v,j)=>Math.floor((v+b.max[j])/(2*cellSize))).join(',');
+  let bin=bins.get(key);
+  if(!bin){bin={min:[...b.min],max:[...b.max],entries:[]};bins.set(key,bin)}
+  for(let j=0;j<3;j++){bin.min[j]=Math.min(bin.min[j],b.min[j]);bin.max[j]=Math.max(bin.max[j],b.max[j])}
+  bin.entries.push(i);
+ }
+ return [...bins.values()];
+}
+export function rayBoxDistance(origin,direction,min,max){
+ let lo=0,hi=Infinity;
+ for(let i=0;i<3;i++){
+  const d=direction[i],p=origin[i];
+  if(Math.abs(d)<1e-12){if(p<min[i]-1e-9||p>max[i]+1e-9)return Infinity;continue}
+  let a=(min[i]-p)/d,b=(max[i]-p)/d;if(a>b)[a,b]=[b,a];
+  lo=Math.max(lo,a);hi=Math.min(hi,b);if(hi+1e-9<lo)return Infinity;
+ }
+ return lo;
+}
+export function rayCandidates(bins,bounds,origin,direction){
+ const candidates=[];
+ for(const bin of bins){
+  if(!Number.isFinite(rayBoxDistance(origin,direction,bin.min,bin.max)))continue;
+  for(const i of bin.entries){const b=bounds[i];if(Number.isFinite(rayBoxDistance(origin,direction,b.min,b.max)))candidates.push(i)}
+ }
+ return candidates;
+}
+// Preserve exact per-triangle raycasting, normal and instance ID.
+export function accelerateInstancePicking(mesh,threshold=48){
+ const original=mesh.raycast,instance=new T.Matrix4(),inverse=new T.Matrix4(),box=new T.Box3(),localRay=new T.Ray(),proxy=new T.Mesh(),hits=[];
+ let index=null;
+ function rebuild(){
+  if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox();
+  const bounds=[];
+  for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,instance);box.copy(mesh.geometry.boundingBox).applyMatrix4(instance);bounds.push({min:box.min.toArray(),max:box.max.toArray()})}
+  index={geometry:mesh.geometry,version:mesh.instanceMatrix.version,count:mesh.count,bounds,bins:buildRayBuckets(bounds)};
+ }
+ mesh.raycast=function(raycaster,intersections){
+  if(mesh.count<threshold||!mesh.material||mesh.morphTexture)return original.call(mesh,raycaster,intersections);
+  if(!index||index.geometry!==mesh.geometry||index.version!==mesh.instanceMatrix.version||index.count!==mesh.count)rebuild();
+  inverse.copy(mesh.matrixWorld).invert();localRay.copy(raycaster.ray).applyMatrix4(inverse);
+  const candidates=rayCandidates(index.bins,index.bounds,localRay.origin.toArray(),localRay.direction.toArray());
+  proxy.geometry=mesh.geometry;proxy.material=mesh.material;
+  for(const i of candidates){
+   mesh.getMatrixAt(i,instance);proxy.matrixWorld.multiplyMatrices(mesh.matrixWorld,instance);hits.length=0;proxy.raycast(raycaster,hits);
+   for(const hit of hits){hit.instanceId=i;hit.object=mesh;intersections.push(hit)}
+  }
+ };
+ return mesh;
+}

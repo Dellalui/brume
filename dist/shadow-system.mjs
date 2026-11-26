@@ -37,3 +37,6 @@ export function selectSceneLights(sources,anchor,limit=8){
  const tie=s=>[s.owner??'',s.x,s.y,s.z??0,s.radius??0,s.color??''].join('|');
  return sources.filter(s=>s&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0).sort((a,b)=>Number(!!a.secondary)-Number(!!b.secondary)||score(a)-score(b)||tie(a).localeCompare(tie(b))).slice(0,limit);
 }
+
+// Four 256px point-shadow atlases use the nominal texel count of one 512px atlas.
+export function pointShadowBudget(shadows,quality){return shadows?(quality===1?2:4):8}
