@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import * as T from './dist/vendor/three.module.min.js';
+import * as W from './dist/world.mjs';
+import {createRenderRegion} from './dist/render-region.mjs';
+import {createAssetLibrary} from './dist/asset-models.mjs';
+import {environmentLight,seasonColor} from './dist/environment.mjs';
+import {perspectiveCamera} from './dist/navigation.mjs';
+import {createLightning} from './dist/lightning.mjs';
+import {fixture} from './test-support/three-fixture.mjs';
+const map=W.newMap('stream','Streaming',512,512);map.blocks={};Object.assign(map.camera,{mode:'fly',fly:{x:256,y:8,z:256},angle:-Math.PI/4,tilt:.25});const cam=perspectiveCamera(map,null,1200,800),region=createRenderRegion(cam,map);
+assert(region.contains(256,285),'close surroundings retained');assert(region.contains(256,190),'distant forward cone retained');assert(!region.contains(256,340),'distant rear culled');assert(!region.contains(480,480));assert(region.chunks.size<100,'bounded chunk budget');
+const {r}=fixture();map.objects=[W.newObject('tree',256,190,'front'),W.newObject('tree',256,340,'rear'),{...W.newObject('light',256,200,'torch'),effect:{kind:'fire',size:1}}];let opts={map,selection:null,images:new Map(),lights:W.buildLights(map),vision:new Set(),explored:new Set(),mode:'mj',terrainEpoch:1,path:[]};r.render(opts);assert(r.debug().cache.has('front'));assert(!r.debug().cache.has('rear'));assert(r.debug().cache.has('torch'));const camera=r.debug().camera;r.render(opts);assert.equal(r.debug().camera,camera,'stationary effects do not rebuild camera collision scan');assert(r.debug().terrain.count<16000,'ground region reduced');
+map.camera.angle+=Math.PI;r.render(opts);assert(r.debug().cache.has('rear'));assert(!r.debug().cache.has('front'),'distant GPU objects released after turn');
+map.environment={enabled:true,hour:18,season:'winter',weather:'snow',clouds:.65,quality:'low',wind:.5};r.render(opts);assert(r.debug().environment.sky.visible);assert(r.debug().environment.weather.visible);assert.equal(r.debug().environment.uniforms.steps.value,8);assert(r.hasAnimation());assert(environmentLight({hour:12,clouds:.3,weather:'clear'}).sun>environmentLight({hour:0,clouds:.3,weather:'clear'}).sun);assert(seasonColor('#405638','winter').r>seasonColor('#405638','summer').r);map.environment.enabled=false;r.render(opts);assert(!r.debug().environment.sky.visible);r.dispose();
+const assets=createAssetLibrary();for(const[id,def]of Object.entries(W.ASSETS)){const data=JSON.parse(fs.readFileSync(new URL('./dist/assets/kenney/'+id+'.json',import.meta.url)));assert(data.position.length>0);assert.equal(data.position.length,data.color.length);assert(data.position.every(Number.isFinite));assets.install(id,data);let o=W.applyProp(W.newObject(id,0,0,id)),a=assets.make(o),b=assets.make(o);assert.equal(a.children[0].geometry,b.children[0].geometry,'shared immutable geometry');assert.notEqual(a.children[0].material,b.children[0].material,'independent per-instance visibility');a.children[0].material.dispose();b.children[0].material.dispose();}assets.dispose();
+const bolt=createLightning(),geometries=bolt.group.children.map(o=>o.geometry);for(let i=0;i<30;i++)bolt.update(i*.5);assert.deepEqual(bolt.group.children.map(o=>o.geometry),geometries,'lightning reuses GPU buffers');for(let o of bolt.group.children)assert(o.geometry.attributes.position.array.every(Number.isFinite));bolt.dispose();
+console.log('PASS: nearby chunks + forward cone, unloaded rear geometry, retained torch, camera reuse, sky/weather/season controls, all 52 CC0 models and pooled lightning buffers. GPU rendering unverified.');

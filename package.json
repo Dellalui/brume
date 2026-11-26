@@ -1,0 +1,1 @@
+{"name":"les-brumes","private":true,"type":"module","scripts":{"test":"node test-all.mjs"},"devDependencies":{"linkedom":"0.18.12"}}
