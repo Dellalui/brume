@@ -195,3 +195,6 @@ body.workspace-ui.creative-building #selectionBar{display:none!important}
  .workspace-ui #creativeCapture small{display:none}
 }
 body.workspace-ui.workspace-focus{--rail:0px;--dock-l:0px!important;--dock-r:0px!important}
+
+/* Do not blur a continuously animated WebGL scene behind modal dialogs. */
+.workspace-ui dialog::backdrop{backdrop-filter:none}

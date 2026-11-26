@@ -1,3 +1,4 @@
+import {setText,setHidden,setData,setAttr} from './ui-values.mjs';
 // UI orchestration: existing controls keep their listeners and IDs.
 export const normalizeSearch=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase().trim();
 export function searchCommands(entries,query,limit=80){
@@ -11,8 +12,8 @@ export function searchCommands(entries,query,limit=80){
 }
 export function syncDockState(doc){
  const panels=[...doc.querySelectorAll('.panel:not(.legacy-build-data)')],open=panels.filter(p=>!p.hidden);
- doc.body.dataset.dockLeft=String(open.some(p=>p.id!=='inspectorPanel'));
- doc.body.dataset.dockRight=String(open.some(p=>p.id==='inspectorPanel'));
+ setData(doc.body,'dockLeft',open.some(p=>p.id!=='inspectorPanel'));
+ setData(doc.body,'dockRight',open.some(p=>p.id==='inspectorPanel'));
 }
 const SCENE_TABS=[['lighting','Lumière'],['sky','Ciel astral'],['weather','Météo'],['graphics','Graphismes']];
 export function organizeSceneSettings(doc){
@@ -78,9 +79,9 @@ export function createBookmarkStore(storage,key='brumes-camera-bookmarks-v1'){
 }
 export function mountWorkspace(doc,api){
  const by=id=>doc.getElementById(id),dialog=by('commandDialog'),input=by('commandSearch'),results=by('commandResults');
- let current=[],active=0,focused=false,store;
+ let current=[],active=0,focused=false,store,bookmarkKey=null;
  try{store=createBookmarkStore(doc.defaultView.localStorage)}catch{store=createBookmarkStore(null)}
- function setFocus(value){focused=!!value;doc.body.classList.toggle('workspace-focus',focused);by('focusWorkspace').setAttribute('aria-pressed',String(focused));by('focusWorkspace').title=(focused?'Afficher les outils':'Agrandir le plateau')+' · Alt+M';syncDockState(doc);api.schedule()}
+ function setFocus(value){value=!!value;if(focused===value)return;focused=value;doc.body.classList.toggle('workspace-focus',focused);setAttr(by('focusWorkspace'),'aria-pressed',focused);setAttr(by('focusWorkspace'),'title',(focused?'Afficher les outils':'Agrandir le plateau')+' · Alt+M');syncDockState(doc);api.schedule()}
  function setActive(i,scroll=false){
   active=Math.max(0,Math.min(current.length-1,i));
   for(let j=0;j<results.children.length;j++){const el=results.children[j];if(el.getAttribute('role')==='option')el.setAttribute('aria-selected',String(j===active))}
@@ -114,7 +115,7 @@ export function mountWorkspace(doc,api){
  by('commandLauncher').onclick=open;by('commandClose').onclick=()=>dialog.close();by('focusWorkspace').onclick=()=>setFocus(!focused);
  function renderBookmarks(){
   const list=by('bookmarkList');if(!list)return;
-  const items=store.list(),maps=api.maps();by('bookmarkCount').textContent='· '+items.length+'/40';list.replaceChildren();
+  const items=store.list(),maps=api.maps(),key=JSON.stringify([items,maps.map(m=>[m.id,m.name])]);if(key===bookmarkKey)return;bookmarkKey=key;setText(by('bookmarkCount'),'· '+items.length+'/40');list.replaceChildren();
   if(!items.length){const p=doc.createElement('p');p.className='empty';p.textContent='Aucun repère. Placez la caméra puis mémorisez votre première vue.';list.append(p)}
   for(const item of items){
    const map=maps.find(m=>m.id===item.mapId),row=doc.createElement('div'),body=doc.createElement('div'),name=doc.createElement('strong'),meta=doc.createElement('small'),go=doc.createElement('button'),del=doc.createElement('button');
@@ -146,7 +147,7 @@ export function mountWorkspace(doc,api){
  }
  function refresh(){
   syncDockState(doc);const o=api.selection(),show=api.isMJ()&&api.mode()==='play'&&!!o;
-  by('selectionBar').hidden=!show;if(show){by('quickSelectionName').textContent=o.name;by('quickSelectionMeta').textContent=api.selectionLabel(o);by('quickControl').hidden=!api.isCharacter(o)}
+  setHidden(by('selectionBar'),!show);if(show){setText(by('quickSelectionName'),o.name);setText(by('quickSelectionMeta'),api.selectionLabel(o));setHidden(by('quickControl'),!api.isCharacter(o))}
   if(!by('bookmarksPanel').hidden)renderBookmarks();
  }
  return {open,handleKey,refresh,setFocus,renderBookmarks};
