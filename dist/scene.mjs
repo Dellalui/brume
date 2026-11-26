@@ -77,28 +77,39 @@ gl_FragColor.rgb=mix(vec3(0.0052,0.0110,0.0097),gl_FragColor.rgb,visibility);`);
  }
  function liquidMaterial(kind){
   if(liquidMaterials.has(kind))return liquidMaterials.get(kind);
-  const water=kind==='water',m=new T.MeshStandardMaterial({color:water?'#3b9bbd':'#f57c24',roughness:water?.23:.72,metalness:water?.03:0,transparent:water,opacity:water?.64:1,depthWrite:!water,side:T.FrontSide,emissive:water?'#031c24':'#ff6b14',emissiveIntensity:water?.13:.9});
+  const water=kind==='water',m=new T.MeshStandardMaterial({color:water?'#4298b0':'#f48737',roughness:water?.24:.80,metalness:water?.02:0,transparent:water,opacity:water?.56:1,depthWrite:!water,side:T.FrontSide,emissive:water?'#03191c':'#da5312',emissiveIntensity:water?.08:.57});
   m.onBeforeCompile=shader=>{
    applyTacticalFog(shader,true);shader.uniforms.liquidTime=fogUniforms.cloudTime;
+   shader.fragmentShader=shader.fragmentShader.replace('gridLine*tacticalGrid*0.35','0.0');
    shader.vertexShader='varying float liquidY;\n'+shader.vertexShader;
    shader.vertexShader=shader.vertexShader.replace('tacticalWorld=(modelMatrix*tacticalP).xz;','tacticalWorld=(modelMatrix*tacticalP).xz; liquidY=(modelMatrix*tacticalP).y;');
    shader.fragmentShader='uniform float liquidTime; varying float liquidY;\n'+shader.fragmentShader;
    shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
-    vec2 p=tacticalWorld;
-    float wave=sin(p.x*4.7+p.y*2.8-liquidTime*1.25+liquidY*2.1)*sin(p.y*5.2-p.x*1.9+liquidTime*.85-liquidY);
-    ${water?'diffuseColor.rgb*=.84+.16*wave; diffuseColor.rgb+=vec3(.035,.085,.10)*smoothstep(.67,.98,wave);':'diffuseColor.rgb=mix(diffuseColor.rgb*.42,vec3(1.,.48,.06),smoothstep(-.55,.65,wave));'}
+    float topness=smoothstep(.12,.78,abs(normalize(tacticalFaceNormal).y));
+    float t=liquidTime*${water?'.42':'.13'};
+    vec2 p=tacticalWorld+vec2(.37*liquidY,-.23*liquidY);
+    // Non-periodic, continuously advected bands. On steep faces the
+    // vertical coordinate travels downwards to suggest a waterfall.
+    vec2 uv=mix(vec2(p.x+p.y*.63,liquidY+t*1.6),p-vec2(t*.62,t*.31),topness);
+    vec2 warp=vec2(sin(uv.y*1.8+sin(uv.x*.91)),cos(uv.x*1.34+uv.y*.67))*.34;
+    float broad=tacticalNoise((uv+warp)*.87);
+    float fine=tacticalNoise((uv+warp)*2.17+vec2(11.4,5.7));
+    float pattern=.72*broad+.28*fine;
+    float wave=.5+.5*sin(uv.x*8.0+uv.y*5.4+broad*6.2);
+    ${water?'float ripple=smoothstep(.80,.98,wave)*.12; diffuseColor.rgb*=.86+.24*pattern; diffuseColor.rgb+=vec3(.05,.12,.15)*ripple;':'float hot=smoothstep(.30,.77,pattern); diffuseColor.rgb=mix(vec3(.27,.045,.012),vec3(1.,.44,.065),hot);'}
+
    `);
-   if(!water)shader.fragmentShader=shader.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance*=.65+.35*wave;');
+   if(!water)shader.fragmentShader=shader.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance*=.32+.68*hot;');
    shader.fragmentShader=shader.fragmentShader.replace('gl_FragColor.rgb=mix(vec3(0.0052,0.0110,0.0097),gl_FragColor.rgb,visibility);','if(tacticalMode<.5 && visibility<.025)discard;\ngl_FragColor.rgb=mix(vec3(0.0052,0.0110,0.0097),gl_FragColor.rgb,visibility);');
   };
-  m.customProgramCacheKey=()=> 'brumes-liquid-v1-'+kind;liquidMaterials.set(kind,m);return m;
+  m.customProgramCacheKey=()=> 'brumes-liquid-v2-smooth-'+kind;liquidMaterials.set(kind,m);return m;
  }
  function renderLiquids(opts,groups,origin,size){
   const result=liquidCache(opts.map,W,opts.mode),slice=opts.blockSlice??32;
   const include=b=>b.object?(!renderRegion||renderRegion.object(b.object)):(!renderRegion||renderRegion.cell(b.x,b.y))&&b.x>=origin.x&&b.y>=origin.y&&b.x<origin.x+size.x&&b.y<origin.y+size.y;
   for(const batch of liquidMeshData(result,include,slice)){
    if(!batch.positions.length)continue;
-   const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(batch.positions,3));geo.computeVertexNormals();geo.computeBoundingSphere();
+   const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(batch.positions,3));geo.setAttribute('normal',new T.Float32BufferAttribute(batch.normals,3));geo.computeBoundingSphere();
    const mesh=new T.Mesh(geo,liquidMaterial(batch.kind));mesh.userData.liquidSurface=true;mesh.userData.liquidKind=batch.kind;mesh.castShadow=false;mesh.receiveShadow=true;mesh.raycast=()=>{};reliefGroup.add(mesh);liquidCount++;
   }
   // Picking retains only the original editable source volume. Flow meshes

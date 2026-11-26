@@ -79,39 +79,127 @@ export function deriveLiquids(map,W,mode='mj',limit=MAX_FLOW_CELLS){
  }
  return {cells,irregular,generated:flows.size,limited:flows.size>=limit};
 }
-export function liquidMeshData(result,include=()=>true,slice=32){
- const cells=result.cells.filter(b=>b.z<slice),columns=new Map(),batches=new Map();
- for(const b of cells){const k=b.kind+'|'+col(b.x,b.y);if(!columns.has(k))columns.set(k,[]);columns.get(k).push(b)}
- const get=(b,x,y)=>columns.get(b.kind+'|'+col(x,y))||[];
- const near=(a,b)=>Math.abs(a-b)<EPS;
- function subtract(spans,lo,hi){const out=[];for(const [a,b] of spans){if(hi<=a+EPS||lo>=b-EPS){out.push([a,b]);continue}if(lo>a+EPS)out.push([a,lo]);if(hi<b-EPS)out.push([hi,b])}return out}
- function face(b,points){
-  const k=b.kind+'|'+Math.floor(b.x/16)+','+Math.floor(b.y/16);
-  if(!batches.has(k))batches.set(k,{kind:b.kind,positions:[]});
-  const p=batches.get(k).positions;
-  for(const i of [0,1,2,0,2,3])p.push(...points[i]);
+// Smooth only the render mesh; the source/flow simulation remains grid-based.
+const CORNERS=[[0,0],[0,1],[1,1],[1,0]];
+export function liquidSurfaceProfiles(cells){
+ const columns=new Map(),lookup=new Map(),profiles=new Map(),normalSums=new Map();
+ const cellKey=(b,x=b.x,y=b.y)=>`${b.kind}|${x},${y},${b.z},${b.h}`;
+ for(const b of cells){
+  const k=b.kind+'|'+col(b.x,b.y);if(!columns.has(k))columns.set(k,[]);
+  columns.get(k).push(b);lookup.set(cellKey(b),b);
  }
- function emit(b,neighbours,transform=(x,z,y)=>[x,z,y]){
-  const lo=b.z,hi=lo+b.renderH,x=b.x,y=b.y,x1=x+(b.w||1),y1=y+(b.d||1),own=neighbours(0,0);
-  const f=points=>face(b,points.map(p=>transform(...p)));
-  if(!own.some(n=>n!==b&&near(n.z,hi)))f([[x,hi,y],[x,hi,y1],[x1,hi,y1],[x1,hi,y]]);
-  if(!own.some(n=>n!==b&&near(n.z+n.renderH,lo)))f([[x,lo,y1],[x,lo,y],[x1,lo,y],[x1,lo,y1]]);
-  for(const [dx,dy] of SIDES){
-   let spans=[[lo,hi]];
-   for(const n of neighbours(dx,dy))spans=subtract(spans,n.z,n.z+n.renderH);
-   for(const [a,c] of spans){
-    if(c-a<EPS)continue;
-    if(dx===1)f([[x1,a,y],[x1,c,y],[x1,c,y1],[x1,a,y1]]);
-    else if(dx===-1)f([[x,a,y1],[x,c,y1],[x,c,y],[x,a,y]]);
-    else if(dy===1)f([[x1,a,y1],[x1,c,y1],[x,c,y1],[x,a,y1]]);
-    else f([[x,a,y],[x,c,y],[x1,c,y],[x1,a,y]]);
+ const at=(b,x=b.x,y=b.y)=>columns.get(b.kind+'|'+col(x,y))||[];
+ const covered=b=>at(b).some(n=>n!==b&&Math.abs(n.z-(b.z+b.h))<EPS);
+ const locked=new Set(cells.filter(b=>b.falling||covered(b)||b.renderH>=b.h-EPS));
+ const cornerCache=new Map();
+ function corner(b,vx,vy){
+  const cacheKey=`${b.kind}|${vx},${vy},${b.z},${b.h}`;
+  if(!cornerCache.has(cacheKey)){
+   const candidates=[];
+   for(const x of [vx-1,vx])for(const y of [vy-1,vy]){
+    const c=lookup.get(cellKey(b,x,y));if(c)candidates.push(c);
+   }
+   // At a diagonal contact only, the two isolated pools must not blend.
+   const unseen=new Set(candidates),values=new Map();
+   while(unseen.size){
+    const first=unseen.values().next().value,component=[first];unseen.delete(first);
+    for(let i=0;i<component.length;i++)for(const c of [...unseen]){
+     if(Math.abs(c.x-component[i].x)+Math.abs(c.y-component[i].y)===1){component.push(c);unseen.delete(c)}
+    }
+    const fixed=component.some(c=>locked.has(c));
+    let height=component.reduce((s,c)=>s+c.renderH,0)/component.length;
+    if(fixed)height=b.h;
+    else if(component.every(c=>!c.source)&&height<.32&&component.length<4)height*=.60+.10*component.length;
+    height=Math.min(b.h,Math.max(.035,height));
+    const id=cacheKey+'|'+first.x+','+first.y;
+    for(const c of component)values.set(c,{height:b.z+height,id});
+   }
+   cornerCache.set(cacheKey,values);
+  }
+  return cornerCache.get(cacheKey).get(b)||{height:b.z+b.renderH,id:cacheKey};
+ }
+ function cross(a,b,c){
+  const u=b.map((n,i)=>n-a[i]),v=c.map((n,i)=>n-a[i]);
+  return [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+ }
+ for(const b of cells){
+  const corners=CORNERS.map(([dx,dy])=>corner(b,b.x+dx,b.y+dy));
+  const p=corners.map((c,i)=>[b.x+CORNERS[i][0],c.height,b.y+CORNERS[i][1]]);
+  const top=!covered(b);
+  profiles.set(b,{b,p,corners,top});
+  if(top)for(const indices of [[0,1,2],[0,2,3]]){
+   const n=cross(...indices.map(i=>p[i]));
+   for(const i of indices){const id=corners[i].id,v=normalSums.get(id)||[0,0,0];normalSums.set(id,v.map((x,j)=>x+n[j]));}
+  }
+ }
+ function normal(id){const n=normalSums.get(id)||[0,1,0],length=Math.hypot(...n)||1;return n.map(x=>x/length)}
+ return {profiles,at,normal};
+}
+export function liquidMeshData(result,include=()=>true,slice=32){
+ const cells=result.cells.filter(b=>b.z<slice),batches=new Map();
+ const {profiles,at,normal}=liquidSurfaceProfiles(cells);
+ const length=v=>Math.hypot(...v),cross=(a,b,c)=>{const u=b.map((n,i)=>n-a[i]),v=c.map((n,i)=>n-a[i]);return [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]};
+ function triangle(b,p,ns){
+  const n=cross(...p),l=length(n);if(l<EPS)return;
+  const k=b.kind+'|'+Math.floor(b.x/16)+','+Math.floor(b.y/16);
+  if(!batches.has(k))batches.set(k,{kind:b.kind,positions:[],normals:[]});
+  const batch=batches.get(k),flat=n.map(x=>x/l);
+  for(let i=0;i<3;i++){batch.positions.push(...p[i]);batch.normals.push(...(ns?.[i]||flat))}
+ }
+ function quad(b,p,ns){for(const indices of [[0,1,2],[0,2,3]])triangle(b,indices.map(i=>p[i]),ns&&indices.map(i=>ns[i]))}
+ const flat=y=>[y,y],value=(l,t)=>l[0]+(l[1]-l[0])*t;
+ // For side profiles, split only where two edge lines intersect. Emit the
+ // vertical intervals not covered by the neighbouring liquid. This handles
+ // waterfalls, half-height sources and unequal corner heights without cracks.
+ function side(b,a,c,neighbours){
+  const floor=flat(b.z),top=[a[1],c[1]],covers=[];
+  const low=b.z,high=Math.max(...top);
+  for(const {base,edge}of neighbours)if(base<high-EPS&&Math.max(...edge)>low+EPS)covers.push([flat(base),edge]);
+  const lines=[floor,top,...covers.flat()],cuts=[0,1];
+  for(let i=0;i<lines.length;i++)for(let j=i+1;j<lines.length;j++){
+   const u=lines[i],v=lines[j],d=(u[1]-u[0])-(v[1]-v[0]);
+   if(Math.abs(d)<EPS)continue;
+   const t=(v[0]-u[0])/d;if(t>EPS&&t<1-EPS)cuts.push(t);
+  }
+  cuts.sort((u,v)=>u-v);
+  const point=(t,y)=>[a[0]+(c[0]-a[0])*t,y,a[2]+(c[2]-a[2])*t];
+  for(let i=1;i<cuts.length;i++){
+   const u=cuts[i-1],v=cuts[i];if(v-u<EPS)continue;
+   const mid=(u+v)/2,sorted=[...lines].sort((l,r)=>value(l,mid)-value(r,mid));
+   for(let j=1;j<sorted.length;j++){
+    const lo=sorted[j-1],hi=sorted[j],l=value(lo,mid),h=value(hi,mid);
+    if(h-l<EPS)continue;const test=(l+h)/2;
+    if(test<value(floor,mid)||test>value(top,mid)||covers.some(([a,c])=>test>value(a,mid)-EPS&&test<value(c,mid)+EPS))continue;
+    quad(b,[point(u,value(lo,u)),point(u,value(hi,u)),point(v,value(hi,v)),point(v,value(lo,v))]);
    }
   }
  }
- for(const b of cells)if(include(b))emit(b,(dx,dy)=>get(b,b.x+dx,b.y+dy));
- for(const o of result.irregular)if(o.z<slice&&include(o)){
-  const b={...o,renderH:o.h*.88},cx=b.x+b.w/2,cy=b.y+b.d/2,c=Math.cos(b.angle),s=Math.sin(b.angle);
-  emit(b,()=>[],(x,z,y)=>[cx+(x-cx)*c-(y-cy)*s,z,cy+(x-cx)*s+(y-cy)*c]);
+ // Each entry lists the current edge and the opposing neighbour edge in
+ // the same horizontal direction, retaining outward winding.
+ const edges=[
+  {dx:1,dy:0,i:3,j:2,ni:0,nj:1},
+  {dx:-1,dy:0,i:1,j:0,ni:2,nj:3},
+  {dx:0,dy:1,i:2,j:1,ni:3,nj:0},
+  {dx:0,dy:-1,i:0,j:3,ni:1,nj:2}
+ ];
+ for(const b of cells){
+  if(!include(b))continue;
+  const {p,corners,top}=profiles.get(b);
+  if(top)quad(b,p,corners.map(c=>normal(c.id)));
+  const under=at(b).some(n=>n!==b&&profiles.get(n).p.every(p=>Math.abs(p[1]-b.z)<EPS));
+  if(!under)quad(b,[p[1],p[0],p[3],p[2]].map(q=>[q[0],b.z,q[2]]));
+  for(const {dx,dy,i,j,ni,nj} of edges){
+   const neighbours=at(b,b.x+dx,b.y+dy).map(n=>({base:n.z,edge:[profiles.get(n).p[ni][1],profiles.get(n).p[nj][1]]}));
+   side(b,p[i],p[j],neighbours);
+  }
+ }
+ // Arbitrarily rotated or scaled sources keep their explicit footprint.
+ for(const b of result.irregular||[])if(b.z<slice&&include(b)){
+  const x=b.x,y=b.y,z=b.z,h=b.h*.88,x1=x+b.w,y1=y+b.d,cx=(x+x1)/2,cy=(y+y1)/2,c=Math.cos(b.angle||0),s=Math.sin(b.angle||0);
+  const p=[[x,z+h,y],[x,z+h,y1],[x1,z+h,y1],[x1,z+h,y]],q=p.map(v=>[v[0],z,v[2]]);
+  const rotate=([x,z,y])=>[cx+(x-cx)*c-(y-cy)*s,z,cy+(x-cx)*s+(y-cy)*c];
+  quad(b,p.map(rotate));quad(b,[q[1],q[0],q[3],q[2]].map(rotate));
+  for(const {i,j}of edges)quad(b,[q[i],p[i],p[j],q[j]].map(rotate));
  }
  return [...batches.values()];
 }
