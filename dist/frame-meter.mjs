@@ -8,7 +8,7 @@ export function createFrameMeter(){
   while(samples.length>2&&samples[0].now<now-1000)samples.shift();
  },read(now){
   if(!last)return {idle:true,fps:null,cpu:null,triangles:0,calls:0};
-  const idle=now-last.now>600,span=samples.at(-1).now-samples[0].now;
-  return {idle,fps:!idle&&samples.length>1&&span>0?(samples.length-1)*1000/span:null,cpu:samples.reduce((n,s)=>n+s.cpu,0)/samples.length,triangles:last.triangles,calls:last.calls};
+  const idle=now-last.now>600,span=samples.at(-1).now-samples[0].now,intervals=samples.slice(1).map((s,i)=>s.now-samples[i].now).sort((a,b)=>a-b),p95=intervals.length?intervals[Math.ceil(intervals.length*.95)-1]:null;
+  return {idle,fps:!idle&&samples.length>1&&span>0?(samples.length-1)*1000/span:null,cpu:samples.reduce((n,s)=>n+s.cpu,0)/samples.length,triangles:last.triangles,calls:last.calls,p95,worst:intervals.at(-1)??null};
  }};
 }

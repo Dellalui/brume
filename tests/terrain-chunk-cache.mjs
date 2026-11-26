@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import * as W from '../dist/world.mjs';
+import {fixture} from '../test-support/three-fixture.mjs';
+const {r}=fixture(),map=W.newMap('chunk-cache','Chunk cache',256,96);W.prepareBlocks(map);
+map.camera.mode='fly';map.camera.fly={x:128,y:8,z:48};map.camera.angle=0;
+const opts={map,mode:'mj',selection:null,images:new Map(),lights:W.buildLights(map),vision:new Set(),explored:new Set(),terrainEpoch:1,path:[]};
+r.render(opts);const initial=new Map(r.debug().terrainChunks),count=r.stats().terrainBuilds;
+map.camera.angle=Math.PI;r.render(opts);const turned=r.stats().terrainBuilds;
+assert([...initial].some(([k,v])=>r.debug().terrainChunks.get(k)===v));
+map.camera.angle=0;r.render(opts);assert.equal(r.stats().terrainBuilds,turned,'returning to cached region creates no terrain');
+assert(turned>=count);r.render(opts);assert.equal(r.stats().terrainBuilds,turned);
+r.dispose();console.log('PASS: independent ground sectors retained across camera rotation');
