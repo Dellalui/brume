@@ -15,6 +15,7 @@ on:
       - 'tests/block-visibility.mjs'
       - 'tests/liquid-flow.mjs'
       - 'tests/camera-collision.mjs'
+      - 'tests/path-markers.mjs'
       - 'recovery/import-release.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -76,6 +77,8 @@ jobs:
           node tests/liquid-flow.mjs
           node --check dist/navigation.mjs
           node tests/camera-collision.mjs
+          node --check dist/path-markers.mjs
+          node tests/path-markers.mjs
           node --check dist/liquid-flow.mjs
           git add -- dist/assets/npc
           if ! git diff --cached --quiet; then
