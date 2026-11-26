@@ -1,0 +1,68 @@
+name: Deploy Les Brumes to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dist/**'
+      - 'brume.zip'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.prepare.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare static site
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f dist/index.html ]]; then
+            site="$GITHUB_WORKSPACE/dist"
+          elif [[ -f brume.zip ]]; then
+            mkdir -p "$RUNNER_TEMP/brume"
+            unzip -q brume.zip -d "$RUNNER_TEMP/brume"
+            site="$RUNNER_TEMP/brume/dist"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Importez brume.zip a la racine du depot avant de publier."
+            exit 0
+          fi
+          test -f "$site/index.html"
+          test -f "$site/editor.mjs"
+          test -f "$site/vendor/three.module.min.js"
+          touch "$site/.nojekyll"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "site=$site" >> "$GITHUB_OUTPUT"
+      - name: Configure Pages
+        if: steps.prepare.outputs.ready == 'true'
+        uses: actions/configure-pages@v5
+      - name: Upload site
+        if: steps.prepare.outputs.ready == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ steps.prepare.outputs.site }}
+  deploy:
+    if: needs.build.outputs.ready == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
