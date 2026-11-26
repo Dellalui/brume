@@ -17,6 +17,7 @@ on:
       - 'tests/camera-collision.mjs'
       - 'tests/path-markers.mjs'
       - 'tests/**'
+      - 'package-lock.json'
       - 'test-*.mjs'
       - 'test-support/**'
       - 'package.json'
@@ -74,7 +75,7 @@ jobs:
             python3 scripts/prepare-npcs.py
           fi
           for f in dist/*.mjs; do node --check "$f"; done
-          npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+          npm ci --ignore-scripts --no-audit --no-fund
           npm test
           git add -- dist/assets/npc
           if ! git diff --cached --quiet; then
@@ -138,7 +139,7 @@ jobs:
                grep -Fq 'dist/index.html' "$RUNNER_TEMP/smoke/root.html" &&
                curl -fsSL --max-time 15 "$base/dist/index.html$query" -o "$RUNNER_TEMP/smoke/game.html" &&
                grep -Fq 'id="app"' "$RUNNER_TEMP/smoke/game.html" &&
-               grep -Fq 'src="editor.mjs"' "$RUNNER_TEMP/smoke/game.html" &&
+               grep -Fq 'src="bootstrap.mjs"' "$RUNNER_TEMP/smoke/game.html" &&
                curl -fsSL --max-time 15 "$base/dist/editor.mjs$query" -o "$RUNNER_TEMP/smoke/editor.mjs" &&
                curl -fsSL --max-time 15 "$base/dist/assets/materials/grass.jpg$query" -o "$RUNNER_TEMP/smoke/grass.jpg" &&
                curl -fsSL --max-time 15 "$base/dist/assets/npc/guard-00.webp$query" -o "$RUNNER_TEMP/smoke/guard.webp" &&

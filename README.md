@@ -1,3 +1,7 @@
+## Version 2026.11.27
+
+Optimisations et neuf impacts : [notes de version](docs/release-2026.11.27.md). Tests : `npm ci && npm test`. ZIP daté : `npm run release`.
+
 # Les Brumes
 
 Editeur de cartes tactiques 3D pour jeu de role.

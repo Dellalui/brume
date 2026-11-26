@@ -55,7 +55,7 @@ export const GRAPHICS_PROFILES=Object.freeze({
 });
 export function applyGraphicsProfile(map,id){
  const p=GRAPHICS_PROFILES[id];if(!p)return false;
- Object.assign(map.renderSettings??={}, {far:p.far,cone:p.cone,effects:p.effects,surface:p.surface});
+ Object.assign(map.renderSettings??={}, {far:p.far,cone:p.cone,effects:p.effects,surface:p.surface,pixelRatio:id==='fast'?1:1.5});
  (map.blockLighting??={}).quality=p.shadowQuality;
  if(map.environment&&map.environment.quality!=='off')map.environment.quality=p.cloudQuality;
  return true;

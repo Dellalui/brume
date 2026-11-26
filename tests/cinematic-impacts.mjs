@@ -20,7 +20,7 @@ for(const quality of ['low','balanced','high'])for(const preset of PRESETS){
  assert(initial<=({low:29,balanced:48,high:67}[quality]));
  assert(root.getObjectByName('Projectile trail').visible);const body=root.getObjectByName('Corps 3D procédural'),core=body.getObjectByName('Noyau turbulent 3D'),front=body.getObjectByName('Front de pression 3D');assert(!body.visible);assert(core.material.isShaderMaterial&&front.material.isShaderMaterial);
  p.phase='impact';
- for(let i=0;i<=180;i++){
+ for(let i=0;i<180;i++){
   p.age=i/60;assert(visuals.update([p],p.age,camera,quality));assert.equal(visuals.group.children[0],root);assert.equal(visuals.stats().instances,initial);
   root.traverse(o=>{if(o.isInstancedMesh)assert(o.instanceMatrix.array.every(Number.isFinite))});
   if(i===6){assert(body.visible&&core.visible);assert.equal(front.visible,preset.id!=='dust');assert(core.scale.x>0&&core.material.uniforms.fade.value>0);assert.equal(root.getObjectByName('Impact flash').visible,preset.id!=='dust');assert(root.getObjectByName('Shockwave').visible);if(preset.id==='storm')assert(root.getObjectByName('Décharges ramifiées'));if(preset.id==='arcane')assert(root.getObjectByName('Arcane column').visible)}
@@ -29,9 +29,9 @@ for(const quality of ['low','balanced','high'])for(const preset of PRESETS){
  }
  assert(!visuals.update([],4,camera,quality));assert.equal(visuals.stats().active,0);cases++;
 }
-assert.equal(cases,18);
+assert.equal(cases,PRESETS.length*3);
 const p={id:'override',config:throwConfig({preset:'fire',power:3,visualScale:2,visualQuality:'high'}),position:{x:0,y:0,z:0},tail:{x:0,y:0,z:0},phase:'impact',age:.2};
 visuals.update([p],.2,camera,'low');assert.equal(visuals.stats().instances,67);
 const core=visuals.group.children[0].getObjectByName('Noyau turbulent 3D');assert.equal(core.scale.x,impactEnvelope('fire',.2,6).width);assert.equal(p.config.radius,3);
 visuals.dispose();factory.dispose();
-console.log('PASS: all six staged impact animations in three quality levels, finite instance matrices, fixed allocation budget, persistent smoke and cleanup.');
+console.log('PASS: all nine staged impact animations in three quality levels, finite instance matrices, fixed allocation budget, persistent smoke and cleanup.');
