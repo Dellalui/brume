@@ -1,3 +1,4 @@
+import {BODY_PARTS,bodyCondition,conditionColor} from './body-condition.mjs';
 import {ARCANE,CATEGORY_SIGILS,arcanePanel,arcaneTile,plate,separator,sigil,texturedCube} from './arcane-theme.mjs';
 // Canvas-native menus. Layout, rendering, hit testing and drag/drop share one
 // coordinate system; no DOM item buttons, invisible hit targets or grid nodes.
@@ -14,6 +15,15 @@ export function hudLayout(w,h){
 export function playerBarLayout(w,h){
  const gap=w<420?4:7,pad=10,slot=Math.max(1,Math.min(57,Math.floor((w-40-2*pad-8*gap)/9))),width=9*slot+8*gap+2*pad;
  return{x:(w-width)/2,y:Math.max(0,h-slot-54),w:width,h:slot+2*pad,slot,gap,pad}
+}
+// Shared responsive geometry keeps health, resources and camera off the slots.
+export function playerResourceLayout(w,h,count,page=0){
+ const bar=playerBarLayout(w,h),cols=bar.w>=480?3:bar.w>=310?2:1,perPage=cols*2,pages=Math.max(1,Math.ceil(count/perPage)),index=Math.max(0,Math.min(pages-1,page)),start=index*perPage,length=Math.min(perPage,Math.max(0,count-start)),rows=Math.max(1,Math.ceil(length/cols)),height=32+rows*35;
+ return{x:bar.x,y:Math.max(8,bar.y-height-9),w:bar.w,h:height,cols,rows,start,length,pages,index};
+}
+export function playerBodyLayout(w,h,expanded=null){
+ const bar=playerBarLayout(w,h),wide=bar.x>=244&&h>=290,open=expanded??wide,width=Math.min(w-20,224),height=open?Math.min(218,Math.max(150,h-24)):29;
+ return{x:10,y:wide?Math.max(8,h-height-91):10,w:width,h:height,open,wide};
 }
 export function inventoryLayout(p,category='blocks'){
  const pad=p.w>=560?22:12,gap=8,cols=p.w>=1000?10:p.w>=310?5:3;
@@ -32,7 +42,7 @@ export function mountCanvasHUD(doc,api){
  if(!viewport||!world||!ctx)return null;
  layer.id='canvasInterface';layer.setAttribute('aria-label','Inventaire et menus de construction');viewport.append(layer);doc.body.classList.add('native-canvas-ui');doc.body.classList.add('canvas-camera-dock');
  const colors=ARCANE;
- let frame=0,regions=[],cursor={x:-1,y:-1},scroll=0,maxScroll=0,grid=null,lastCategory='',lastQuery='',lastFamily='',searching=false,familyOpen=false,down=null,drag=null,active=true,origin=null,layout=null;
+ let frame=0,regions=[],cursor={x:-1,y:-1},scroll=0,maxScroll=0,grid=null,lastCategory='',lastQuery='',lastFamily='',searching=false,familyOpen=false,down=null,drag=null,active=true,origin=null,layout=null,bodyExpanded=null,resourcePage=0,playerId=null;
  const images=new Map(),listeners=[];
  function on(el,name,fn,opts){el.addEventListener(name,fn,opts);listeners.push(()=>el.removeEventListener(name,fn,opts))}
  function schedule(){if(active&&!frame)frame=win.requestAnimationFrame(draw)}
@@ -54,15 +64,50 @@ export function mountCanvasHUD(doc,api){
   const hoveredSlot=regions.find(r=>r.slot!=null&&contains(r,cursor.x,cursor.y));const name=s.slots[hoveredSlot?.slot??s.active]?.name||'';const plaque={x:w/2-Math.min(150,barW*.25)-38,y:y-30,w:Math.min(300,barW*.5),h:24};arcaneTile(ctx,plaque,{selected:true});text(name,plaque.x+plaque.w/2,y-18,plaque.w-16,14,colors.fg,'center',650);button({x:x+barW-91,y:y-31,w:91,h:24},'settings','Réglages · R',api.settings);
   text('E : inventaire   ·   1–9 : raccourcis   ·   R : réglages',w/2,y+z+17,w-12,10,colors.muted,'center')
  }
+ function drawPlayerResources(s,w,h){
+  const bars=s.player.bars||[],r=playerResourceLayout(w,h,bars.length,resourcePage);resourcePage=r.index;
+  panel(r);region(r,'player-resources',()=>{});
+  text(s.player.name||'Personnage',r.x+12,r.y+15,r.w-(r.pages>1?105:24),14,colors.gold,'left',700);
+  if(r.pages>1){button({x:r.x+r.w-92,y:r.y+5,w:25,h:21},'resources-prev','‹',()=>{resourcePage=Math.max(0,resourcePage-1)},false,r.index===0);
+   text((r.index+1)+'/'+r.pages,r.x+r.w-48,r.y+15,36,10,colors.muted,'center');
+   button({x:r.x+r.w-30,y:r.y+5,w:24,h:21},'resources-next','›',()=>{resourcePage=Math.min(r.pages-1,resourcePage+1)},false,r.index+1===r.pages)}
+  const gap=8,cw=(r.w-20-(r.cols-1)*gap)/r.cols;
+  bars.slice(r.start,r.start+r.length).forEach((bar,i)=>{
+   const x=r.x+10+(i%r.cols)*(cw+gap),y=r.y+29+Math.floor(i/r.cols)*35,value=bar.value+'/'+bar.max;
+   ctx.font='500 11px system-ui';const vw=Math.min(cw*.48,ctx.measureText(value).width+5);
+   text(bar.name,x+3,y+8,cw-vw-9,11,colors.fg);text(value,x+cw-3,y+8,vw,11,colors.fg,'right');
+   box({x,y:y+17,w:cw,h:10},'#0a1717','#685d46',2);
+   const fill=Math.max(0,Math.min(1,bar.value/bar.max));ctx.fillStyle=bar.color;ctx.fillRect(x+2,y+19,Math.max(0,(cw-4)*fill),6);
+  });
+ }
+ function drawBody(s,w,h){
+  const r=playerBodyLayout(w,h,bodyExpanded);if(r.w<85)return;
+  panel(r);region(r,'body-panel',()=>{});
+  button({x:r.x+5,y:r.y+4,w:r.w-10,h:22},'body-toggle',r.open?'État du corps  ▾':'État du corps  ▸',()=>{bodyExpanded=!r.open},false);
+  if(!r.open)return;
+  const body=bodyCondition({bodyCondition:s.player.body}),scale=Math.min((r.h-40)/165,(r.w*.44)/86),x=r.x+r.w*.25-43*scale,y=r.y+33;
+  ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);
+  // Original segmented silhouette: left/right are anatomical, viewed from front.
+  function shape(id,points){ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fillStyle=conditionColor(body[id]);ctx.fill();ctx.strokeStyle='#e4c48b';ctx.lineWidth=.9;ctx.stroke()}
+  ctx.beginPath();ctx.ellipse(43,16,11,14,0,0,Math.PI*2);ctx.fillStyle=conditionColor(body.head);ctx.fill();ctx.strokeStyle='#e4c48b';ctx.lineWidth=.9;ctx.stroke();
+  shape('torso',[[29,35],[37,32],[49,32],[57,35],[62,61],[53,88],[33,88],[24,61]]);
+  shape('rightArm',[[24,36],[15,43],[8,70],[3,91],[11,95],[24,72],[30,47]]);
+  shape('leftArm',[[62,36],[71,43],[78,70],[83,91],[75,95],[62,72],[56,47]]);
+  shape('rightLeg',[[32,91],[42,91],[40,123],[36,155],[23,155],[23,149],[28,121]]);
+  shape('leftLeg',[[44,91],[54,91],[58,121],[63,149],[63,155],[50,155],[46,123]]);
+  ctx.restore();
+  const listX=r.x+r.w*.50,listW=r.w*.50-12,step=(r.h-44)/6;
+  BODY_PARTS.forEach(([id,label],i)=>{const yy=r.y+38+step*i;text(label,listX,yy,listW-35,11,colors.fg);text(body[id]+'%',r.x+r.w-11,yy,36,12,conditionColor(body[id]),'right',700)});
+ }
  function drawPlayerBar(s,w,h){
+  if(playerId!==s.player.id){playerId=s.player.id;resourcePage=0}
   const r=playerBarLayout(w,h);panel(r);
   for(let i=0;i<9;i++){
    const cell={x:r.x+r.pad+i*(r.slot+r.gap),y:r.y+r.pad,w:r.slot,h:r.slot};
    box(cell,'#101e1dcc','#776448',5);
    text(String(i+1),cell.x+6,cell.y+9,12,9,colors.muted);
   }
-  const name=s.player.name||'Personnage',labelW=Math.min(260,r.w-20);
-  text(name,w/2,r.y-12,labelW,14,colors.gold,'center',650);
+  drawPlayerResources(s,w,h);drawBody(s,w,h);
  }
  function drawCameraDock(s,w,h){
   const c=s.camera;if(!c||s.open)return;
@@ -70,7 +115,7 @@ export function mountCanvasHUD(doc,api){
   if(width<90)return;
   const bar=player?playerBarLayout(w,h):null;
   const beside=player&&w-(bar.x+bar.w)>=width+24;
-  const r={x:w-width-8,y:player?(beside?Math.max(8,h-140):Math.max(8,bar.y-94)):Math.max(8,h-140),w:width,h:78};
+  const r={x:w-width-8,y:player?(beside?Math.max(8,h-140):Math.max(8,playerResourceLayout(w,h,s.player?.bars?.length||0,resourcePage).y-86)):Math.max(8,h-140),w:width,h:78};
   if(s.building){r.x=8;r.y=65;}
   panel(r);region(r,'camera-dock',()=>{});
   text(first?'EXPLORATION':c.mode==='third'?'VUE TACTIQUE':'CAMÉRA MJ',r.x+10,r.y+12,r.w-20,10,colors.gold,'left',700);

@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import * as W from '../dist/world.mjs';
+import {createRenderRegion} from '../dist/render-region.mjs';
+import {fixture} from '../test-support/three-fixture.mjs';
+import {bodyCondition,conditionColor,setBodyPart,BODY_PARTS} from '../dist/body-condition.mjs';
+import {playerBarLayout,playerBodyLayout,playerResourceLayout} from '../dist/canvas-hud.mjs';
+const map=W.newMap('resident','Resident',512,512);W.prepareBlocks(map);
+Object.assign(map.camera,{mode:'fly',fly:{x:256,y:8,z:256},angle:0});
+const camera={position:{x:256,z:256},isPerspectiveCamera:true};
+const first=createRenderRegion(camera,map);
+assert(first.cell(256-40,256)&&first.cell(256+40,256),'nearby sectors resident on both sides');
+map.camera.angle=Math.PI;
+const reverse=createRenderRegion(camera,map);assert([...first.chunks].every(k=>reverse.chunks.has(k)));
+map.camera.angle=0;assert.equal(createRenderRegion(camera,map).key,reverse.key,'look back does not unload or rebuild sectors');
+camera.position.x=480;assert(!createRenderRegion(camera,map).cell(256,256),'distant sectors evicted');
+const {r}=fixture(),opts={map,mode:'mj',selection:null,images:new Map(),lights:W.buildLights(map),vision:new Set(),explored:new Set(),terrainEpoch:1,path:[]};
+W.setBlock(map,252,252,0,'stone');W.setBlock(map,270,252,0,'stone');r.render(opts);
+const meshes=()=>new Map(r.debug().reliefGroup.children.filter(m=>m.userData.reliefBatch&&!m.userData.cutOverlay).map(m=>[m.userData.reliefBatch,m]));
+const before=meshes();assert(before.size>=2);map.camera.angle=Math.PI;r.render(opts);map.camera.angle=0;r.render(opts);for(const [k,m]of before)assert.equal(meshes().get(k),m,'nearby relief meshes stay resident');
+const ground=new Map(r.debug().terrainChunks);W.digGround(map,252,252);opts.terrainEpoch++;r.render(opts);
+assert.notEqual(r.debug().terrainChunks.get('15,15'),ground.get('15,15'));assert.equal(r.debug().terrainChunks.get('16,15'),ground.get('16,15'),'unchanged ground descriptor retained');
+W.setBlock(map,252,252,0,null);opts.terrainEpoch++;r.render(opts);assert(![...meshes().values()].some(m=>m.userData.blocks?.some(b=>b.x===252&&b.y===252)),'edited relief is updated');
+r.dispose();
+const o=W.newObject('hero',4,4,'hero');assert.deepEqual(bodyCondition(o),Object.fromEntries(BODY_PARTS.map(([id])=>[id,100])));
+assert(setBodyPart(o,'leftArm',32));assert.equal(bodyCondition(o).leftArm,32);assert.equal(bodyCondition(o).rightArm,100);assert(!setBodyPart(o,'invalid',0));assert(!setBodyPart(o,'head',''));assert(setBodyPart(o,'head',0));assert.equal(conditionColor(0),'rgb(211,53,61)');assert.equal(conditionColor(100),'rgb(99,192,136)');
+assert.deepEqual(bodyCondition(JSON.parse(JSON.stringify(o))),bodyCondition(o));
+for(const w of [320,600,1280,1920]){const bar=playerBarLayout(w,720),resources=playerResourceLayout(w,720,15,1),body=playerBodyLayout(w,720);assert(resources.y+resources.h<bar.y);assert(resources.start>0&&resources.pages>1);assert(body.x>=0&&body.x+body.w<=w&&body.y+body.h<=720);if(body.wide)assert(body.x+body.w<bar.x)}
+console.log('PASS: nearby sector residency, return rotation, distance eviction, edited terrain, body percentages, persistence and resource pagination.');

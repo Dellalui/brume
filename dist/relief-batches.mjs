@@ -1,8 +1,8 @@
 const FACE_DIRS=[[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0],[0,-1,0]];
-export function reliefPlan(groups,fullUnits,cutaway,opaque){
+export function reliefPlan(groups,fullUnits,cutaway,opaque,chunked=false){
  const out=[];
  for(const [kind,cells] of groups){
-  const bins=new Map(),split=cells.length>=96;
+  const bins=new Map(),split=chunked||cells.length>=96;
   for(const b of cells){
    const k=split?Math.floor((b.x+.5)/16)+','+Math.floor((b.y+.5)/16):'all';
    if(!bins.has(k))bins.set(k,[]);bins.get(k).push(b);

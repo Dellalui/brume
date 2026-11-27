@@ -229,3 +229,8 @@ body.workspace-ui #mapActions{position:absolute;inset:70px 12px auto auto;width:
 
 /* Camera controls are drawn and hit-tested by the Canvas HUD. */
 .canvas-camera-dock .camera-bar{display:none!important}
+
+/* Player information now belongs to the Canvas HUD. Retain HTML fallback. */
+.native-canvas-ui #playerCameraHud{display:none!important}
+.body-condition-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}
+.body-condition-fields input{width:100%;font-variant-numeric:tabular-nums}
