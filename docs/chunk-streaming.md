@@ -1,0 +1,5 @@
+# Chunk transition performance
+
+The high-refresh target is native display frequency, without reducing visible quality. Camera turns previously invalidated occlusion and relief whenever the region's sector key changed, even for empty sectors. A sparse CPU-only sector index now prepares block/ground references on edit, scopes occlusion to occupied sectors, and includes actual liquid and ground selection in the geometry key. Offscreen relief batches are detached and retained within bounded instance/batch budgets. Ground descriptors for nearby inactive sectors are prepared in small idle slices where supported, never forcing an idle callback timeout. No additional GPU draw calls are issued for parked meshes.
+
+The first visit to an uncached dense sector can still cause synchronous geometry creation and GPU upload. This is not a full worker-driven voxel mesher or a visual LOD system. Measure frame time p95 and worst interval while rotating and crossing sectors at unchanged settings. Exposed diagnostics: terrainPreloads, reliefBuilds, occlusionBuilds, parkedReliefBatches.

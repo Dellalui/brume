@@ -27,6 +27,7 @@ export function createRenderRegion(camera,map){
   return false;
  };
  const object=o=>{const w=o.w||1,d=o.d||1;return contains(o.x+w/2,o.y+d/2,Math.hypot(w,d)/2+(o.light?.radius||o.effect?.size||0))};
- const region={key:small?'whole-map':[...chunks].sort().join(';'),contains,cell,object,origin,chunks,resident:chunks.size-activeCount,residentLimit,bounds:small?{x0:0,y0:0,x1:map.width,y1:map.height}:{x0:Math.max(0,origin.x-far-16),y0:Math.max(0,origin.y-far-16),x1:Math.min(map.width,origin.x+far+16),y1:Math.min(map.height,origin.y+far+16)}};
+ const prefetch=[];if(!small){for(let cy=Math.max(0,top-1);cy<=Math.min(Math.ceil(map.height/16)-1,bottom+1);cy++)for(let cx=Math.max(0,left-1);cx<=Math.min(Math.ceil(map.width/16)-1,right+1);cx++){const id=cx+','+cy;if(chunks.has(id))continue;const d=(cx*16+8-origin.x)**2+(cy*16+8-origin.y)**2;if(d<=(far+24)**2)prefetch.push({id,d})}prefetch.sort((a,b)=>a.d-b.d||a.id.localeCompare(b.id))}
+ const region={prefetch:prefetch.slice(0,24).map(p=>p.id),key:small?'whole-map':[...chunks].sort().join(';'),contains,cell,object,origin,chunks,resident:chunks.size-activeCount,residentLimit,bounds:small?{x0:0,y0:0,x1:map.width,y1:map.height}:{x0:Math.max(0,origin.x-far-16),y0:Math.max(0,origin.y-far-16),x1:Math.min(map.width,origin.x+far+16),y1:Math.min(map.height,origin.y+far+16)}};
  regionCache.set(map,{key:cacheKey,scope,region});return region;
 }

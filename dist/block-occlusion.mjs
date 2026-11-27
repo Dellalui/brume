@@ -13,14 +13,14 @@ function covered(a,b,c,d,rects){
  }
  return true;
 }
-export function buildBlockOcclusion(map,{region=null,slice=32,mode='mj'}={}){
+export function buildBlockOcclusion(map,{region=null,slice=32,mode='mj',columns=Object.entries(map.blocks||{}),objects=map.objects}={}){
  const hiddenObjects=new Set(),hiddenVoxels=new Set(),boxes=[],grid=new Map(),partialGrid=new Map(),fullUnits=new Set(),groups=new Map(map.groups.map(g=>[g.id,g]));
  const add=b=>{b.unit=b.min.every((v,i)=>Math.abs(v-Math.round(v))<EPS&&Math.abs(b.max[i]-v-1)<EPS)?b.min.map(Math.round):null;boxes.push(b);if(!b.opaque)return;if(b.unit)fullUnits.add(key(...b.unit));for(let x=Math.floor(b.min[0]/BUCKET);x<=Math.floor((b.max[0]-EPS)/BUCKET);x++)for(let y=Math.floor(b.min[1]/BUCKET);y<=Math.floor((b.max[1]-EPS)/BUCKET);y++)for(let z=Math.floor(b.min[2]/BUCKET);z<=Math.floor((b.max[2]-EPS)/BUCKET);z++){const k=key(x,y,z);if(!grid.has(k))grid.set(k,[]);grid.get(k).push(b);if(!b.unit){if(!partialGrid.has(k))partialGrid.set(k,[]);partialGrid.get(k).push(b)}}};
- for(const [column,entries]of Object.entries(map.blocks||{})){
+ for(const [column,entries]of columns){
   const [x,y]=column.split(',').map(Number);if(region&&!region.cell(x,y)||!W.activeCell(map,x,y))continue;
   for(const [base,kind]of Object.entries(entries)){const z=+base,h=W.blockSize(map,x,y,z),id=key(x,y,z),def=W.BLOCKS[kind];if(!def||z>=slice||groups.get(map.blockGroups?.[id])?.visible===false)continue;add({id,voxel:true,min:[x,y,z],max:[x+1,y+1,z+h],opaque:def.opaque&&def.opacity===1,canHide:true})}
  }
- for(const o of map.objects){
+ for(const o of objects){
   if(o.type!=='block'||o.visible===false||groups.get(o.group)?.visible===false||mode!=='mj'&&o.secret||region&&!region.object(o))continue;
   const turn=(o.facing||0)/(Math.PI/2);if(Math.abs(turn-Math.round(turn))>EPS)continue;
   const b=W.bounds(o),z=W.elevation(o,map),def=W.BLOCKS[o.material||'stone'];if(z>=slice)continue;
