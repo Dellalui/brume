@@ -30,7 +30,7 @@ export function inventoryLayout(p,category='blocks'){
 export function mountCanvasHUD(doc,api){
  const viewport=doc.getElementById('viewport'),world=doc.getElementById('map'),win=doc.defaultView,layer=doc.createElement('canvas'),ctx=layer.getContext('2d');
  if(!viewport||!world||!ctx)return null;
- layer.id='canvasInterface';layer.setAttribute('aria-label','Inventaire et menus de construction');viewport.append(layer);doc.body.classList.add('native-canvas-ui');
+ layer.id='canvasInterface';layer.setAttribute('aria-label','Inventaire et menus de construction');viewport.append(layer);doc.body.classList.add('native-canvas-ui');doc.body.classList.add('canvas-camera-dock');
  const colors=ARCANE;
  let frame=0,regions=[],cursor={x:-1,y:-1},scroll=0,maxScroll=0,grid=null,lastCategory='',lastQuery='',lastFamily='',searching=false,familyOpen=false,down=null,drag=null,active=true,origin=null,layout=null;
  const images=new Map(),listeners=[];
@@ -64,6 +64,25 @@ export function mountCanvasHUD(doc,api){
   const name=s.player.name||'Personnage',labelW=Math.min(260,r.w-20);
   text(name,w/2,r.y-12,labelW,14,colors.gold,'center',650);
  }
+ function drawCameraDock(s,w,h){
+  const c=s.camera;if(!c||s.open)return;
+  const player=!!s.player,first=c.mode==='first',width=Math.min(w-16,first?220:264);
+  if(width<90)return;
+  const bar=player?playerBarLayout(w,h):null;
+  const beside=player&&w-(bar.x+bar.w)>=width+24;
+  const r={x:w-width-8,y:player?(beside?Math.max(8,h-140):Math.max(8,bar.y-94)):Math.max(8,h-140),w:width,h:78};
+  if(s.building){r.x=8;r.y=65;}
+  panel(r);region(r,'camera-dock',()=>{});
+  text(first?'EXPLORATION':c.mode==='third'?'VUE TACTIQUE':'CAMÉRA MJ',r.x+10,r.y+12,r.w-20,10,colors.gold,'left',700);
+  const keyboard={auto:'Auto',azerty:'AZERTY',qwerty:'QWERTY'}[c.keyboard]||'Auto',act=id=>()=>api.cameraAction(id);
+  const gap=5,pad=8,half=(r.w-2*pad-gap)/2;
+  button({x:r.x+pad,y:r.y+23,w:half,h:24},'camera-keyboard',keyboard,act('keyboard'));
+  button({x:r.x+pad+half+gap,y:r.y+23,w:half,h:24},'camera-capture',c.locked?'Libérer · Échap':'Contrôler',act('captureCamera'),c.locked);
+  const actions=first?[['light',s.player?.light==='flashlight'?'Torche · L':s.player?.light==='lantern'?'Lanterne · L':'Éteint · L']]:[['rotateLeft','↶'],['rotateRight','↷'],['zoomOut','−'],['zoomIn','+'],['focus','⌖']];
+  if(!first&&player&&s.player.hasLight)actions.push(['light','L']);
+  const sw=(r.w-2*pad-(actions.length-1)*gap)/actions.length;
+  actions.forEach(([id,label],i)=>button({x:r.x+pad+i*(sw+gap),y:r.y+50,w:sw,h:21},'camera-'+id,label,act(id),false,id==='light'&&!s.player?.hasLight));
+ }
  function drawInventory(s,l){const p=l.panel;if(p.h<70)return;panel(p);region(p,'inventory-panel',()=>{searching=false;familyOpen=false});
   text('◇  ATELIER DU MAÎTRE DU JEU  ◇',p.x+p.w/2,p.y+18,p.w-90,11,colors.gold,'center',700);text('Inventaire de construction',p.x+p.w/2,p.y+42,p.w-90,p.w<450?19:26,colors.fg,'center',650);separator(ctx,p.x+22,p.y+61,p.w-44);
   button({x:p.x+p.w-43,y:p.y+9,w:32,h:34},'close','×',api.close);
@@ -83,7 +102,7 @@ export function mountCanvasHUD(doc,api){
  function drawContext(s,w,h){const m=s.context;if(!m)return;const width=Math.min(245,w-12),height=35+m.actions.length*32+8,r={x:Math.max(6,Math.min(m.x,w-width-6)),y:Math.max(6,Math.min(m.y,h-height-6)),w:width,h:height};panel(r);region(r,'context-panel',()=>{});text(m.name,r.x+12,r.y+17,r.w-24,13,colors.gold,'left',650);m.actions.forEach((a,i)=>button({x:r.x+6,y:r.y+34+i*32,w:r.w-12,h:29},'context-'+i,a.label,a.run))}
  function draw(){frame=0;if(!active)return;origin=viewport.getBoundingClientRect();const w=origin.width,h=origin.height;if(w<1||h<1)return;const dpr=Math.min(2,win.devicePixelRatio||1),bw=Math.max(1,Math.round(w*dpr)),bh=Math.max(1,Math.round(h*dpr));if(layer.width!==bw||layer.height!==bh){layer.width=bw;layer.height=bh}ctx.setTransform(bw/w,0,0,bh/h,0,0);ctx.clearRect(0,0,w,h);regions=[];grid=null;maxScroll=0;
   const s=api.state();layer.style.pointerEvents=s.open?'auto':'none';layout=hudLayout(w,h);const forms=doc.getElementById('creativeForms');if(forms&&s.open&&['settings','zone'].includes(s.category)){const r=inventoryLayout(layout.panel,s.category).forms;Object.assign(forms.style,{left:r.x+'px',top:r.y+'px',width:r.w+'px',height:r.h+'px',bottom:'auto',transform:'none'});}if(s.category!==lastCategory||s.query!==lastQuery||s.family!==lastFamily){scroll=0;lastCategory=s.category;lastQuery=s.query;lastFamily=s.family}if(!s.open){searching=false;familyOpen=false;drag=null}
-  if(s.building)drawBar(s,layout,w);else if(s.player)drawPlayerBar(s,w,h);if(s.open)drawInventory(s,layout);else drawSelection(s,w,h);drawContext(s,w,h);
+  if(s.building)drawBar(s,layout,w);else if(s.player)drawPlayerBar(s,w,h);if(s.open)drawInventory(s,layout);else drawSelection(s,w,h);drawCameraDock(s,w,h);drawContext(s,w,h);
   if(drag){ctx.globalAlpha=.9;box({x:cursor.x-30,y:cursor.y-30,w:60,h:60},colors.card,colors.gold);icon(drag,cursor.x,cursor.y,36);ctx.globalAlpha=1}
  }
  function point(e){const r=viewport.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
@@ -99,5 +118,5 @@ export function mountCanvasHUD(doc,api){
  on(viewport,'wheel',e=>{if(!target(e))return;consume(e);if(grid&&contains(grid,...Object.values(point(e)))){scroll=Math.max(0,Math.min(maxScroll,scroll+e.deltaY));schedule()}},{capture:true,passive:false});
  function handleKey(e){if(!searching||!api.state().open||['INPUT','SELECT','TEXTAREA'].includes(e.target?.tagName))return false;let q=api.state().query;if(e.key==='Escape'||e.key==='Enter'||e.key==='Tab'){searching=false;schedule()}else if(e.key==='Backspace')api.search(q.slice(0,-1));else if(e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey)api.search((q+e.key).slice(0,120));else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='a')api.search('');else return false;e.preventDefault();return true}
  const resize=new win.ResizeObserver(schedule);resize.observe(viewport);on(win,'resize',schedule);on(doc,'pointerlockchange',schedule);
- draw();return{schedule,containsEvent,handleKey,dispose(){active=false;if(frame)win.cancelAnimationFrame(frame);resize.disconnect();for(const off of listeners)off();layer.remove();doc.body.classList.remove('native-canvas-ui')}};
+ draw();return{schedule,containsEvent,handleKey,dispose(){active=false;if(frame)win.cancelAnimationFrame(frame);resize.disconnect();for(const off of listeners)off();layer.remove();doc.body.classList.remove('native-canvas-ui','canvas-camera-dock')}};
 }
