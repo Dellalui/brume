@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as W from '../dist/world.mjs';
 import * as T from '../dist/vendor/three.module.min.js';
 import {blockObject} from '../dist/construction.mjs';
-import {PRESETS,THROW_ITEMS,throwConfig,planImpact,applyImpact,createThrowQueue,MAX_REMOVALS} from '../dist/throw-effects.mjs';
+import {PRESETS,THROW_ITEMS,throwConfig,planImpact,applyImpact,createThrowQueue,flightTrail,MAX_REMOVALS} from '../dist/throw-effects.mjs';
 import {createEffects} from '../dist/effects.mjs';
 import {createThrowVisuals} from '../dist/throw-visuals.mjs';
 import {canvasStub,fixture} from '../test-support/three-fixture.mjs';
@@ -31,6 +31,13 @@ let impacts=0;const queue=createThrowQueue(),from={x:2000,y:2000,z:5};
 assert(!queue.launch(map,false,from,at,{},W,0));for(let i=0;i<40;i++)assert(queue.launch(map,true,from,at,{power:2},W,0));assert.equal(queue.size,40);
 assert(queue.advance(map,true,50,()=>impacts++).every(p=>p.phase==='flight'&&p.trail.length===24));assert.equal(impacts,0);assert(queue.advance(map,true,500,()=>impacts++).every(p=>p.phase==='impact'));assert.equal(impacts,40);queue.advance(map,true,1000,()=>impacts++);assert.equal(impacts,40);assert.equal(queue.advance(map,true,3600,()=>impacts++).length,0);
 queue.launch(map,true,from,at,{},W,3700);assert.equal(queue.advance({...map},true,4200,()=>impacts++).length,0);assert.equal(impacts,40);
+const deferred=createThrowQueue();deferred.launch(map,true,from,at,{power:2},W,0);
+const lazy=deferred.advance(map,true,50,()=>{}, {deferTrails:true})[0];
+assert.equal(lazy.trail,undefined,'renderer computes trails only after culling');
+const buffer=flightTrail(lazy.flightFrom,lazy.flightTo,lazy.flightProgress),first=buffer[0],copy=structuredClone(buffer);
+assert.equal(flightTrail(lazy.flightFrom,lazy.flightTo,lazy.flightProgress,buffer),buffer);
+assert.equal(buffer[0],first);assert.deepEqual(buffer,copy);
+assert.deepEqual(buffer,flightTrail(from,at,lazy.flightProgress));
 // Exercise the vendored Quarks burst generators with real Three scene objects.
 const fx=createEffects(()=>canvasStub(128,128)),visuals=createThrowVisuals(fx),scene=new T.Scene(),camera=new T.PerspectiveCamera();scene.add(visuals.group);camera.position.set(at.x+8,at.z+6,at.y+12);camera.lookAt(at.x,at.z+1,at.y);
 for(const preset of PRESETS.slice(0,9)){

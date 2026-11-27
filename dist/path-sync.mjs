@@ -20,8 +20,9 @@ export function createPathSync(){
    staticObjects=map.objects.filter(o=>!W.character(o)).map(collisionObject).filter(o=>o.blocking||o.type==='block'||o.type==='platform'||o.type==='balcony');
    staticKey=key;
   }
-  const objects=[...staticObjects,...map.objects.filter(W.character).map(collisionObject)],objectMap=new Map(objects.map(o=>[o.id,o])),full=map!==mapRef||!prev;
-  if(full){mapRef=map;prev={fields:staticFields,objects:objectMap};return {revision:++revision,init:{...staticFields,objects}}}
+  const actors=new Map();for(const o of map.objects)if(W.character(o)){const object=collisionObject(o);actors.set(o.id,{object,key:encode(object)})}
+  const full=map!==mapRef||!prev;
+  if(full){mapRef=map;prev={fields:staticFields,staticObjects,actors};return {revision:++revision,init:{...staticFields,objects:[...staticObjects,...Array.from(actors.values(),e=>e.object)]}}}
   const update={},deltas={};
   if(staticFields!==prev.fields){
    for(const [k,v]of Object.entries(staticFields))if(!DICTS.includes(k)&&encode(v)!==encode(prev.fields[k]))update[k]=v;
@@ -33,9 +34,17 @@ export function createPathSync(){
    }
   }
   const objectDelta={set:[],remove:[]};
-  for(const [id,o]of objectMap){const old=prev.objects.get(id);if(old!==o&&encode(old)!==encode(o))objectDelta.set.push(o)}
-  for(const id of prev.objects.keys())if(!objectMap.has(id))objectDelta.remove.push(id);
-  prev={fields:staticFields,objects:objectMap};
+  // Avoid walking and allocating a full obstacle Map for actor-only changes.
+  if(staticObjects===prev.staticObjects){
+   for(const [id,e]of actors)if(prev.actors.get(id)?.key!==e.key)objectDelta.set.push(e.object);
+   for(const id of prev.actors.keys())if(!actors.has(id))objectDelta.remove.push(id);
+  }else{
+   const combine=(stat,dyn)=>{const out=new Map(stat.map(o=>[o.id,{object:o,key:null}]));for(const [id,e]of dyn)out.set(id,e);return out};
+   const before=combine(prev.staticObjects,prev.actors),after=combine(staticObjects,actors);
+   for(const [id,e]of after){const old=before.get(id);if(!old||(old.key??encode(old.object))!==(e.key??encode(e.object)))objectDelta.set.push(e.object)}
+   for(const id of before.keys())if(!after.has(id))objectDelta.remove.push(id);
+  }
+  prev={fields:staticFields,staticObjects,actors};
   if(Object.keys(update).length||Object.keys(deltas).length||objectDelta.set.length||objectDelta.remove.length)return {revision:++revision,update,deltas,objectDelta};
   return {revision};
  }};

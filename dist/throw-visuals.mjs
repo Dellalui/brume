@@ -1,6 +1,6 @@
 import * as T from './vendor/three.module.min.js';
 import {createLightning} from './lightning.mjs';
-import {IMPACT_MS} from './throw-effects.mjs';
+import {IMPACT_MS,flightTrail} from './throw-effects.mjs';
 import {createOpticalEffects} from './optical-effects.mjs';
 import {createImpactBodies} from './impact-bodies.mjs';
 
@@ -116,8 +116,8 @@ export function createThrowVisuals(factory){
    const strength=p.config.strength??1;
    if(e.lens)e.lens.update(at,r,p.age,life,strength,camera);
    if(p.phase==='flight'){
-    if(e.lens)e.lens.mesh.visible=false;e.body.group.visible=false;e.core.visible=e.halo.visible=e.trail.visible=true;e.core.scale.setScalar(.085+r*.035);billboard(e.halo,.5+r*.19);e.trail.count=p.trail?.length??7;
-    for(let i=0;i<e.trail.count;i++){const t=(i+1)/e.trail.count,q=p.trail?.[i];dummy.position.set(q?q.x-at.x:(p.tail.x-at.x)*t,q?q.z-at.z:(p.tail.z-at.z)*t,q?q.y-at.y:(p.tail.y-at.y)*t);dummy.rotation.set(0,0,0);dummy.scale.setScalar((.12+r*.025)*(1-t*.85));dummy.updateMatrix();e.trail.setMatrixAt(i,dummy.matrix)}e.trail.instanceMatrix.needsUpdate=true;continue;
+    if(e.lens)e.lens.mesh.visible=false;e.body.group.visible=false;e.core.visible=e.halo.visible=e.trail.visible=true;e.core.scale.setScalar(.085+r*.035);billboard(e.halo,.5+r*.19);const points=p.flightFrom?flightTrail(p.flightFrom,p.flightTo,p.flightProgress,e.trailPoints??=[]):p.trail;e.trail.count=points?.length??7;
+    for(let i=0;i<e.trail.count;i++){const t=(i+1)/e.trail.count,q=points?.[i];dummy.position.set(q?q.x-at.x:(p.tail.x-at.x)*t,q?q.z-at.z:(p.tail.z-at.z)*t,q?q.y-at.y:(p.tail.y-at.y)*t);dummy.rotation.set(0,0,0);dummy.scale.setScalar((.12+r*.025)*(1-t*.85));dummy.updateMatrix();e.trail.setMatrixAt(i,dummy.matrix)}e.trail.instanceMatrix.needsUpdate=true;continue;
    }
    e.core.visible=e.halo.visible=e.trail.visible=false;
    e.body.update(a,r);if(e.lens||kind==='shockwave')e.body.group.visible=false;

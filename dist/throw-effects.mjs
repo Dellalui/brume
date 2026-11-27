@@ -94,13 +94,13 @@ export function applyImpact(map,plan,W){
  if(ids.size){const before=map.objects.length;map.objects=map.objects.filter(o=>!ids.has(o.id)||o.type!=='block'||o.locked||o.protected||locks.has(o.group));count+=before-map.objects.length}
  return count;
 }
-export function flightPosition(from,to,t){
+export function flightPosition(from,to,t,out={}){
  t=Math.max(0,Math.min(1,t));const arc=Math.sin(t*Math.PI)*.28;
- return {x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t,z:from.z+(to.z-from.z)*t+arc};
+ out.x=from.x+(to.x-from.x)*t;out.y=from.y+(to.y-from.y)*t;out.z=from.z+(to.z-from.z)*t+arc;return out;
 }
-export function flightTrail(from,to,t){
+export function flightTrail(from,to,t,out=[]){
  const distance=throwDistance(from,to),span=Math.min(1,5/Math.max(.001,distance));
- return Array.from({length:24},(_,i)=>flightPosition(from,to,t-span*(i+1)/24));
+ for(let i=0;i<24;i++)out[i]=flightPosition(from,to,t-span*(i+1)/24,out[i]);out.length=24;return out;
 }
 export function createThrowQueue(namespace='throw'){
  let items=[],serial=0;
@@ -114,13 +114,13 @@ export function createThrowQueue(namespace='throw'){
    if(!validImpact(map,point,W)||!Number.isFinite(now)||items.length>=32)return false;
    const config=throwConfig(item);items.push({id:namespace+'-'+(++serial),map,to:{x:point.x,y:point.y,z:point.z},config,level,impactAt:now,started:now,duration:0});return true;
   },
-  advance(map,enabled,now,onImpact){
+  advance(map,enabled,now,onImpact,{deferTrails=false}={}){
    if(!enabled){items=[];return []}
    items=items.filter(p=>p.map===map);
    const visible=[];
    for(const p of items){
     if(p.impactAt===null&&now>=p.started+p.duration){p.impactAt=p.started+p.duration;onImpact(p.to,{preset:p.config.id,power:p.config.power,destroy:p.config.destroy})}
-    if(p.impactAt===null){visible.push({id:p.id,config:p.config,position:flightPosition(p.from,p.to,(now-p.started)/p.duration),tail:flightPosition(p.from,p.to,(now-p.started)/p.duration-.15),trail:flightTrail(p.from,p.to,(now-p.started)/p.duration),phase:'flight',age:0});continue}
+    if(p.impactAt===null){const t=(now-p.started)/p.duration,flight={id:p.id,config:p.config,position:flightPosition(p.from,p.to,t),tail:flightPosition(p.from,p.to,t-.15),phase:'flight',age:0};if(deferTrails){flight.flightFrom=p.from;flight.flightTo=p.to;flight.flightProgress=t}else flight.trail=flightTrail(p.from,p.to,t);visible.push(flight);continue}
     const age=(now-p.impactAt)/1000;
     for(const layer of p.config.layers){const elapsed=age-layer.delay;if(!layer.enabled||elapsed<0||elapsed>=layer.duration)continue;visible.push({id:p.id+':'+layer.id,config:{...p.config,id:layer.kind,color:layer.color,shape:layer.shape,strength:layer.strength,radius:p.config.radius*layer.size,duration:layer.duration},position:p.to,tail:p.to,level:p.level,phase:'impact',age:elapsed})}
    }

@@ -9,9 +9,11 @@ export function assemble(records){const root=records.find(r=>r.field==='world'&&
  world.maps=mapIds.map(id=>{const m=maps.get(id);if(!m)throw Error('Carte sauvegardée manquante');m.objects=m.objectIds.map(oid=>objects.get(JSON.stringify([id,oid])));if(m.objects.some(o=>!o))throw Error('Objet sauvegardé manquant');delete m.objectIds;delete m.recordFields;return m});return world;
 }
 export function createWorldStorage(indexedDB){
- let previous=new Map(),chain=Promise.resolve();const db=new Promise((resolve,reject)=>{const r=indexedDB.open('brumes-world-records',1);r.onupgradeneeded=()=>r.result.createObjectStore('records');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
- return {async load(){const d=await db;return new Promise((resolve,reject)=>{const r=d.transaction('records').objectStore('records').getAll();r.onsuccess=()=>{try{resolve(assemble(r.result))}catch(e){reject(e)}};r.onerror=()=>reject(r.error)})},save(world){
-  const snapshot=capture(world);const write=async()=>{const d=await db,next=partition(snapshot),changes=[],removed=[];for(const[k,r]of next){const old=previous.get(k);if(!old||old.value!==r.value&&(r.field!=='world'&&r.field!=='head'||JSON.stringify(old.value)!==JSON.stringify(r.value)))changes.push([k,r])}for(const k of previous.keys())if(!next.has(k))removed.push(k);
+ let previous=new Map(),initialized=false,chain=Promise.resolve();const db=new Promise((resolve,reject)=>{const r=indexedDB.open('brumes-world-records',1);r.onupgradeneeded=()=>r.result.createObjectStore('records');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
+ const readRecords=async()=>{const d=await db;return new Promise((resolve,reject)=>{const r=d.transaction('records').objectStore('records').getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})};
+ const seed=records=>{if(!initialized){previous=new Map(records.map(r=>[JSON.stringify([r.mapId,r.field,r.key]),r]));initialized=true}};
+ return {async load(){const records=await readRecords(),world=assemble(records);seed(records);return world},save(world){
+  const snapshot=capture(world);const write=async()=>{const d=await db;if(!initialized)seed(await readRecords());const next=partition(snapshot),changes=[],removed=[];for(const[k,r]of next){const old=previous.get(k);if(!old||old.value!==r.value&&(r.field!=='world'&&r.field!=='head'||JSON.stringify(old.value)!==JSON.stringify(r.value)))changes.push([k,r])}for(const k of previous.keys())if(!next.has(k))removed.push(k);
    if(changes.length||removed.length)await new Promise((resolve,reject)=>{const tx=d.transaction('records','readwrite'),store=tx.objectStore('records');for(const[k,r]of changes)store.put(r,k);for(const k of removed)store.delete(k);tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);tx.onerror=()=>reject(tx.error)});previous=next;return{changed:changes.length,removed:removed.length};
   };chain=chain.catch(()=>{}).then(write);return chain;
  }};
