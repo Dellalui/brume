@@ -20,17 +20,17 @@ export function* visionCells(map,actor){
 export function createPartyVisionCache(perceive=W.perception,now=()=>performance.now()){
  let entries=new Map(),mapRef=null,lightRef=null,lightKey='',revision=null,cursor=0,aggregate=null;
  return {clear(){entries.clear();cursor=0;aggregate=null},collect(map,observers,lights,epoch,{budgetMs=Infinity,maxRays=Infinity}={}){
-  const start=now();let changed=false,reset=false;const changedCells=new Set();
+  const start=now();let changed=false;
   if(lights!==lightRef){const key=JSON.stringify([lights?.sources,lights?.walls,map.lighting]);changed=key!==lightKey;lightKey=key;lightRef=lights}
   // Topology/level/fog edits discard memory; moving lights invalidate rays only.
-  if(map!==mapRef||epoch!==revision){reset=true;entries.clear();aggregate=null;mapRef=map;revision=epoch}
-  else if(changed){reset=true;for(const e of entries.values())e.key=null;aggregate=null}
-  const ids=new Set(observers.map(a=>a.id));for(const id of entries.keys())if(!ids.has(id)){reset=true;entries.delete(id);aggregate=null}
+  if(map!==mapRef||epoch!==revision){entries.clear();aggregate=null;mapRef=map;revision=epoch}
+  else if(changed){for(const e of entries.values())e.key=null;aggregate=null}
+  const ids=new Set(observers.map(a=>a.id));for(const id of entries.keys())if(!ids.has(id)){entries.delete(id);aggregate=null}
   for(const a of observers){
    // Match the editor's cell-sized movement key. Snapshot the pose so a
    // partially computed mask cannot mix rays from different positions.
    const key=JSON.stringify([Math.round(a.x),Math.round(a.y),Math.round((a.facing||0)*12/Math.PI),Math.round(W.elevation(a,map)*2),a.w,a.d,W.eyeHeight(a),a.vision]);
-   if(entries.get(a.id)?.key!==key){reset=true;
+   if(entries.get(a.id)?.key!==key){
     const snapshot={...a,vision:{...a.vision}},old=entries.get(a.id);
     // Preserve terrain presentation, never authoritative visibility.
     const display=old?.display||new Map(),{valid}=visionDomain(map,snapshot),fog=new Set(map.fog||[]);
@@ -50,7 +50,7 @@ export function createPartyVisionCache(perceive=W.perception,now=()=>performance
     if(rays>0&&(rays>=maxRays||now()-start>=budgetMs)){stopped=true;break}
     const next=entry.scan.next();if(next.done){entry.done=true;recomputed++;continue}
     const [x,y]=next.value,k=W.cellKey(x,y),v=perceive(map,entry.actor,x,y,lights);
-    entry.tiles.set(k,v);changedCells.add(k);
+    entry.tiles.set(k,v);
     if(v.allowed)entry.allowed.add(k);
     if(v.detail>0||v.haze>0)entry.sight.set(k,{detail:Math.max(0,v.detail),haze:Math.max(0,v.haze)});
     if(v.detail>.25||v.haze>.1)entry.vision.add(k);
@@ -79,6 +79,6 @@ export function createPartyVisionCache(perceive=W.perception,now=()=>performance
    if(observers.length>1)for(const a of observers)for(const [k,v]of entries.get(a.id).display)if(v>(display.get(k)||0))display.set(k,v);
    aggregate={sight,allowed,vision,individual,display};
   }
-  return{...aggregate,newlyExplored,changedCells,reset,recomputed,pending,rays,ms:now()-start};
+  return{...aggregate,newlyExplored,recomputed,pending,rays,ms:now()-start};
  }};
 }
