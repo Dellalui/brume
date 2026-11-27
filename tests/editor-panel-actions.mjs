@@ -10,7 +10,7 @@ const lines=source.split('\n');
 const fn=name=>{const line=lines.find(l=>l.startsWith('function '+name+'('));assert(line,name+' missing');return line};
 const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
 const scheduled=[],camera={mode:'fly',angle:0,tilt:.45,fly:{x:4,y:5,z:6}};
-const c=vm.createContext({document,$,$$,syncDockState,canvasHUD:{schedule(){}},inventoryOpen:false,innerWidth:1600,viewMode:'mj',mode:'play',creativeReady:true,workspaceUI:{setFocus(){},refresh(){}},renderEffectLayer(){},schedule(){scheduled.push(1)},toggleInventory(){},localStorage:{removeItem(){}},toast(){},selected:()=>({id:'actor'}),actor:()=>({id:'actor',facing:0}),map:()=>({width:32,height:32,camera}),canvas:$('#map'),stopCreativeStroke(){},stopMovement(){},clearNavigationInput(){},recenterPlayer(){},renderCreative(){},refresh(){},setTool(){},setBuildTab(){},buildTab:'catalog',tool:'select',adding:null,drawBrush:null,dirty:false,W:{FX:{},TYPES:{}},structuredClone});
+const c=vm.createContext({document,$,$$,syncDockState,playerCameraMode:()=> 'first',cameraFromHeading:a=>-a-Math.PI/4,canvasHUD:{schedule(){}},inventoryOpen:false,innerWidth:1600,viewMode:'mj',mode:'play',creativeReady:true,workspaceUI:{setFocus(){},refresh(){}},renderEffectLayer(){},schedule(){scheduled.push(1)},toggleInventory(){},localStorage:{removeItem(){}},toast(){},selected:()=>({id:'actor'}),actor:()=>({id:'actor',facing:0}),map:()=>({width:32,height:32,camera}),canvas:$('#map'),stopCreativeStroke(){},stopMovement(){},clearNavigationInput(){},recenterPlayer(){},renderCreative(){},refresh(){},setTool(){},setBuildTab(){},buildTab:'catalog',tool:'select',adding:null,drawBrush:null,dirty:false,W:{FX:{},TYPES:{}},structuredClone});
 vm.runInContext(['syncPanels','showPanel','closePanel','resetLayout','syncWorkspace','setView','setMode'].map(fn).join('\n'),c);
 const run=s=>vm.runInContext(s,c);
 const panel=id=>document.getElementById(id);
@@ -43,7 +43,7 @@ assert.equal(document.body.dataset.dockLeft,'false');assert.equal(document.body.
 const view=panel('viewMode');let value='mj';
 Object.defineProperty(view,'value',{configurable:true,get:()=>value,set:v=>{value=v}});
 c.innerWidth=1600;run("showPanel('layersPanel');showPanel('inspectorPanel');setView('selected')");
-assert.equal(c.viewMode,'selected');assert.equal(camera.mode,'third');assert([...document.querySelectorAll('.panel')].every(p=>p.hidden));
+assert.equal(c.viewMode,'selected');assert.equal(camera.mode,'first');assert([...document.querySelectorAll('.panel')].every(p=>p.hidden));
 run("syncWorkspace();showPanel('lightPanel')");assert(!open('lightPanel'),'MJ panels hidden in player view');
 run("setView('mj');setMode('build');syncWorkspace()");assert.equal(c.mode,'build');assert.equal(camera.mode,'fly');
 run("setMode('play');syncWorkspace()");assert.equal(c.mode,'play');
