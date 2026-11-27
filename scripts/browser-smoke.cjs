@@ -14,6 +14,9 @@ const assert=require('node:assert/strict'),http=require('node:http'),fs=require(
   assert(await page.evaluate(()=>!!document.createElement('canvas').getContext('webgl2')));
   await page.locator('#buildMode').click();await page.keyboard.press('Escape');await page.locator('#inventoryLauncher').click();await page.locator('[data-inventory="throws"]').click();
   assert.equal(await page.locator('#inventoryItems>button').count(),24);
+  await page.waitForFunction(()=>document.body.classList.contains('canvas-ui')&&document.querySelector('#canvasInterface')?.width>0);
+  assert(await page.evaluate(()=>{const c=document.querySelector('#canvasInterface'),r=document.querySelector('#creativeInventory').getBoundingClientRect(),v=c.getBoundingClientRect(),ctx=c.getContext('2d');return ctx.getImageData(Math.floor((r.left-v.left+20)*c.width/v.width),Math.floor((r.top-v.top+20)*c.height/v.height),1,1).data[3]>0}));
+  assert.equal(await page.locator('#canvasInterface').evaluate(e=>getComputedStyle(e).pointerEvents),'none');
   await page.locator('#inventoryItems>button').filter({hasText:'Singularité instable'}).click();await page.locator('[data-inventory="settings"]').click();
   await page.locator('#throwRange').fill('0');await page.locator('#throwRange').press('Tab');
   assert.equal(await page.locator('.effect-layer-card').count(),4);
