@@ -74,3 +74,8 @@ Cartes indépendantes, extensions et retraits confirmés, passages, groupes, ini
 La vision respecte les hauteurs, obstacles, portes et réglages de regard. Le dégagement transparent de la caméra ne donne pas une vision à travers les murs. Le terrain reste borné entre −16 et +32. Les lumières et effets sont simplifiés ; il ne s’agit pas d’une illumination globale physique.
 
 Les modifications sont enregistrées localement. Une sauvegarde illisible est copiée avant un chargement de secours ; si cette copie est impossible, l’écriture est suspendue. Il n’y a pas encore de synchronisation multijoueur ni d’export complet de campagne avec ses images.
+
+
+## Presets et lancers composés
+
+Construire → E → À lancer : 24 presets. R ouvre la portée (0 = sans limite), la vitesse et le compositeur. Ajouter, dupliquer ou désactiver des couches ; régler leurs délais et durées ; Tout ensemble ou Enchaîner. Les presets personnels sont enregistrés dans le monde. Prévisualiser au viseur ne détruit rien. Les formes visuelles sont indépendantes du rayon affectant les blocs. Les distorsions et trous noirs déforment le décor. Aucun plafond de lancers simultanés ; le rendu se simplifie sous forte charge.

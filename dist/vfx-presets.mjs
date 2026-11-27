@@ -3,7 +3,7 @@ import {BatchedRenderer,ParticleSystem,ConstantValue,IntervalValue,ConstantColor
 import {createLightning} from './lightning.mjs';
 // All ambient and spell effects use Quarks for emission, lifetime, evolution and batching.
 export function createParticleEffect(e,texture){
- const group=new T.Group(),batch=new BatchedRenderer(),systems=[],materials=[],kind=e.kind,size=Math.max(.2,e.size||1),density=Math.min(3,Math.max(.2,e.density||1))*(e.quality==='low'?.45:e.quality==='high'?1:.7),speed=Math.min(3,Math.max(.1,e.speed||1)),tint=new T.Color(e.color||'#c5daef');
+ const group=new T.Group(),batch=new BatchedRenderer(),systems=[],materials=[],kind=e.kind,size=Math.max(.2,e.size||1),density=Math.min(3,Math.max(.2,e.density||1))*(e.quality==='low'?.45:e.quality==='high'?1:.7),speed=Math.min(e.kind?.startsWith('blast_')?30:3,Math.max(.001,e.speed||1)),tint=new T.Color(e.color||'#c5daef');
  group.name='Quarks · '+kind;batch.matrixAutoUpdate=false;batch.matrixWorldAutoUpdate=false;group.add(batch);let attenuation=1,clock=0;
  const vector=c=>new T.Vector3(c.r,c.g,c.b),white=new T.Vector3(1,1,1),colored=vector(tint);
  function emitter(style){return{type:'BrumesEmitter',update(){},initialize(p){let angle=Math.random()*Math.PI*2,r=Math.sqrt(Math.random()),r2=.1+Math.random()*.9;p.position.set(Math.cos(angle)*r*size,0,Math.sin(angle)*r*size);p.velocity.set(0,p.startSpeed,0);p.vfxPhase=angle;p.vfxRadius=r;p.vfxSeed=Math.random();
@@ -11,6 +11,7 @@ export function createParticleEffect(e,texture){
  if(style==='fall'){if(kind==='waterfall'){p.position.x*=.35;p.position.z*=.08}p.position.y=3.5*size;p.velocity.y=-p.startSpeed;p.velocity.x=kind==='snow'?.12*size:.15*size}
  if(style==='implode'){const up=Math.random()*2-1,radius=Math.sqrt(1-up*up);p.position.set(Math.cos(angle)*radius,up,Math.sin(angle)*radius).multiplyScalar(size*1.6);p.velocity.copy(p.position).normalize().multiplyScalar(-p.startSpeed)}
  if(style==='burst'){const up=Math.random()*2-1,radius=Math.sqrt(1-up*up);p.position.set(0,0,0);p.velocity.set(Math.cos(angle)*radius*p.startSpeed,up*p.startSpeed,Math.sin(angle)*radius*p.startSpeed)}
+ if(['burst','implode'].includes(style)){if(['ring','disc'].includes(e.shape)){p.velocity.y=0;p.position.y=0}else if(e.shape==='cone'){p.velocity.y=Math.abs(p.velocity.y)+p.startSpeed*.5;p.velocity.x*=.45;p.velocity.z*=.45}else if(e.shape==='column'){p.velocity.x*=.35;p.velocity.z*=.35;p.velocity.y=Math.abs(p.velocity.y)*1.8}else if(e.shape==='dome')p.velocity.y=Math.abs(p.velocity.y)}
  if(style==='spray'){p.position.multiplyScalar(.12);p.velocity.set(Math.cos(angle)*r2*p.startSpeed,p.startSpeed*(.5+Math.random()),Math.sin(angle)*r2*p.startSpeed)}
  if(style==='rise'){p.position.multiplyScalar(.22);p.velocity.x=(Math.random()-.5)*.15*size;p.velocity.z=(Math.random()-.5)*.15*size}
  if(style==='orbit'){p.position.y=Math.random()*size*1.8;p.velocity.set(0,0,0)}

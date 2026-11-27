@@ -5,11 +5,13 @@
   "scripts": {
     "test": "node test-all.mjs",
     "benchmark": "node scripts/benchmark.mjs",
-    "release": "python3 scripts/package-release.py"
+    "release": "python3 scripts/package-release.py",
+    "test:browser": "node scripts/browser-smoke.cjs"
   },
   "devDependencies": {
     "fake-indexeddb": "^6.2.8",
-    "linkedom": "0.18.12"
+    "linkedom": "0.18.12",
+    "playwright-core": "^1.65.1"
   },
-  "version": "2026.11.27"
+  "version": "2026.11.27-2"
 }

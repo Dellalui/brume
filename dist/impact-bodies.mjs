@@ -114,12 +114,16 @@ export function createImpactBodies(){
  const geos={low:new T.SphereGeometry(1,18,12),balanced:new T.SphereGeometry(1,28,18),high:new T.SphereGeometry(1,40,26)};
  // The vertex shader can expand the sphere beyond its initial bounding box.
  for(const g of Object.values(geos)){g.computeBoundingSphere();g.boundingSphere.radius*=1.25}
- function create(kind,quality){
-  const p=STYLES[kind]||STYLES.blast,geometry=geos[quality]||geos.balanced,group=new T.Group();
+ const shapes=new Map();
+ function shaped(shape,quality){if(!shape||shape==='sphere')return geos[quality==='minimal'?'low':quality]||geos.balanced;const key=shape+quality;if(shapes.has(key))return shapes.get(key);const n=quality==='high'?32:quality==='low'||quality==='minimal'?12:20;
+ let g=shape==='cube'?new T.BoxGeometry(1.65,1.65,1.65,3,3,3):shape==='cone'?new T.ConeGeometry(1,2,n,4):shape==='column'?new T.CylinderGeometry(.65,.65,2.2,n,3):shape==='ring'?new T.TorusGeometry(.8,.16,8,n):shape==='disc'?new T.CylinderGeometry(1,1,.16,n):new T.SphereGeometry(1,n,Math.floor(n/2),0,Math.PI*2,0,Math.PI/2);if(shape==='ring')g.rotateX(Math.PI/2);g.computeBoundingSphere();g.boundingSphere.radius*=1.25;shapes.set(key,g);return g;
+ }
+ function create(kind,quality,shape='sphere',color){
+  const p=STYLES[kind]||STYLES.blast,geometry=shaped(shape,quality),group=new T.Group();
   group.name='Corps 3D procédural';
   function material(shell){return new T.ShaderMaterial({uniforms:{
-   elapsed:{value:0},style:{value:p.index},shell:{value:shell},fade:{value:0},detailNoise:{value:quality==='low'?0:1},
-   hotColor:{value:new T.Color(p.hot)},coldColor:{value:new T.Color(p.cold)},highlightColor:{value:new T.Color(p.highlight)}
+   elapsed:{value:0},style:{value:p.index},shell:{value:shell},fade:{value:0},detailNoise:{value:['low','minimal'].includes(quality)?0:1},
+   hotColor:{value:new T.Color(color||p.hot)},coldColor:{value:new T.Color(p.cold)},highlightColor:{value:new T.Color(p.highlight)}
   },vertexShader:impactVertexShader,fragmentShader:impactFragmentShader,transparent:true,depthTest:true,depthWrite:false,side:T.FrontSide,toneMapped:false,blending:shell?T.AdditiveBlending:T.NormalBlending})}
   const core=new T.Mesh(geometry,material(0)),wave=new T.Mesh(geos.low,material(1));
   core.name='Noyau turbulent 3D';wave.name='Front de pression 3D';group.add(core,wave);group.visible=false;
@@ -132,5 +136,5 @@ export function createImpactBodies(){
    for(const [mesh,fade]of [[core,v.alpha],[wave,v.waveAlpha]]){mesh.material.uniforms.elapsed.value=age;mesh.material.uniforms.fade.value=fade}
   },dispose(){core.material.dispose();wave.material.dispose()}};
  }
- return {create,dispose(){for(const g of Object.values(geos))g.dispose()}};
+ return {create,dispose(){for(const g of [...Object.values(geos),...shapes.values()])g.dispose()}};
 }

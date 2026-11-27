@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {parseHTML} from 'linkedom';
+import {createThrowComposer} from '../dist/throw-composer.mjs';
+const {document,window}=parseHTML('<div id="root"></div>');
+Object.defineProperty(window.HTMLSelectElement.prototype,'value',{get(){return this.querySelector('option[selected]')?.value||this.options[0]?.value||''},set(v){for(const o of this.options)o.toggleAttribute('selected',o.value===String(v))},configurable:true});
+let item={kind:'throw',preset:'blast'},saves=[],changes=0,previews=0;
+const ui=createThrowComposer(document.querySelector('#root'),{getItem:()=>item,getSaved:()=>[],onChange(){changes++},onSave(p){saves.push(p)},onDelete(){},onPreview(){previews++}});
+const click=text=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent===text);assert(b,text);b.onclick()};
+ui.render();assert.equal(document.querySelectorAll('.effect-layer-card').length,1);click('+ Ajouter un effet');assert.equal(item.layers.length,2);
+click('Enchaîner');assert.equal(item.layers[1].delay,item.layers[0].duration);click('Tout ensemble');assert(item.layers.every(l=>l.delay===0));
+const duration=[...document.querySelectorAll('.effect-layer-card label')].find(l=>l.textContent==='Durée (s)').querySelector('input');duration.value='8';duration.onchange();assert.equal(item.layers[0].duration,8);
+click('Dupliquer');assert.equal(item.layers.length,3);click('Enregistrer');assert.equal(saves[0].layers.length,3);click('Prévisualiser au viseur');assert.equal(previews,1);click('Retirer');assert.equal(item.layers.length,2);assert(changes>=5);
+const library=document.querySelector('[aria-label="Bibliothèque de presets"]');library.value='singularity';library.onchange();assert(item.layers.some(l=>l.kind==='blackhole'));assert(item.layers.some(l=>l.delay>0));assert.equal(document.querySelectorAll('.effect-track').length,item.layers.length);
+console.log('PASS: recipe composer DOM, editable timing, duplication/removal, sequencing, simultaneous layers, preset selection, save and preview.');
