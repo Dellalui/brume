@@ -35,7 +35,7 @@ function clipFraction(a,b,boxes,r){
  }
  return Math.max(0,t===1?1:t-.025/length);
 }
-function boxesNear(map,origin,range,ignore,liquids){
+export function boxesNear(map,origin,range,ignore,liquids=null,player=false){
  const boxes=[],x0=origin.x-range,x1=origin.x+range,z0=origin.z-range,z1=origin.z+range;
  const add=(x,y,z,w,h,d,angle=0)=>{if([x,y,z,w,h,d,angle].every(Number.isFinite)&&w>0&&h>0&&d>0)boxes.push({x,y,z,w,h,d,angle})};
  for(let z=Math.max(0,Math.floor(z0));z<Math.min(map.height,Math.ceil(z1));z++)for(let x=Math.max(0,Math.floor(x0));x<Math.min(map.width,Math.ceil(x1));x++){
@@ -45,11 +45,12 @@ function boxesNear(map,origin,range,ignore,liquids){
  }
  const groups=new Map((map.groups||[]).map(g=>[g.id,g.visible!==false]));
  for(const o of map.objects||[]){
-  if(o.id===ignore||o.visible===false||groups.get(o.group)===false||W.character(o)||W.isDoor(o)&&o.open)continue;
-  if(o.type==='block'?!(W.BLOCKS[o.material||'stone']?.solid||o.material==='lava'):!(o.blocking||o.blocksSight))continue;
+  if(o.id===ignore||!player&&(o.visible===false||groups.get(o.group)===false||W.character(o))||W.isDoor(o)&&o.open)continue;
+  if(o.type==='block'?!(W.BLOCKS[o.material||'stone']?.solid||!player&&o.material==='lava'):!(o.blocking||player&&W.character(o)||!player&&o.blocksSight))continue;
   const b=W.collisionBounds(o);if(b.x+b.w<x0||b.x>x1||b.y+b.h<z0||b.y>z1)continue;
-  const p=W.center(o),y=W.elevation(o,map),h=(o.height||1)*(o.scale||1);
+  const p=W.center(o),y=W.elevation(o,map),h=player&&W.character(o)?(o.bodyHeight||o.height||1.8):(o.height||1)*(o.scale||1);
   if(W.isSegment(o))add(p.x,y,p.y,Math.max(.01,Math.hypot(o.x2-o.x,o.y2-o.y)),h,.16,Math.atan2(o.y2-o.y,o.x2-o.x));
+  else if(player&&W.character(o)){const radius=Math.max(.24,Math.min(.45,(o.w||1)*.29));add(p.x,y,p.y,radius*2,h,radius*2)}
   else if(o.type==='tree')add(p.x,y,p.y,(o.trunkRadius||.13)*2,h,(o.trunkRadius||.13)*2);
   else add(p.x,y,p.y,o.w||1,h,o.d||1,o.facing||0);
  }
@@ -62,18 +63,28 @@ export function sweepCameraMotion(map,from,to,liquids=null){
  const a=new T.Vector3(from.x,from.y,from.z),b=new T.Vector3(to.x,to.y,to.z);
  if(![...a.toArray(),...b.toArray()].every(Number.isFinite))return {...from};
  if(a.distanceTo(b)>30)b.sub(a).setLength(30).add(a);
- const range=a.distanceTo(b)+1,boxes=boxesNear(map,a,range,null,liquids),r=.19;
- // A previously embedded free camera can escape; it must not get trapped.
- const usable=boxes.filter(box=>cameraBoxEntry(a,a,box,0)!==0);
- const result=a.clone().lerp(b,clipFraction(a,b,usable,r));
- return {x:result.x,y:result.y,z:result.z};
+ const delta=b.clone().sub(a),radius=.19,boxes=boxesNear(map,a,delta.length()+3,null,liquids);
+ // Recover a camera left inside a newly constructed solid or loaded save.
+ if(!clearPoint(a,boxes,0)){
+  const candidates=[];for(const box of boxes){if(cameraBoxEntry(a,a,box,0)!==0)continue;const c=Math.cos(box.angle||0),s=Math.sin(box.angle||0),u=(a.x-box.x)*c+(a.z-box.z)*s,v=-(a.x-box.x)*s+(a.z-box.z)*c;
+   for(const [x,y,z] of [[-box.w/2-radius-.03,a.y,v],[box.w/2+radius+.03,a.y,v],[u,a.y,-box.d/2-radius-.03],[u,a.y,box.d/2+radius+.03],[u,box.y-radius-.03,v],[u,box.y+box.h+radius+.03,v]]){const p=new T.Vector3(box.x+x*c-z*s,y,box.z+x*s+z*c);if(p.distanceTo(a)<=4&&clearPoint(p,boxes,radius))candidates.push(p)}
+  }
+  candidates.sort((p,q)=>p.distanceToSquared(a)-q.distanceToSquared(a));
+  if(candidates.length)a.copy(candidates[0]);
+  else {const target=a.clone().add(delta);if(clearPoint(target,boxes,radius))return {x:target.x,y:target.y,z:target.z};return {...from}}
+ }
+ // Sweep each axis in short increments so a wall stops only the blocked
+ // component, rather than freezing all motion when the camera grazes a corner.
+ const count=Math.max(1,Math.ceil(delta.length()/.25)),step=delta.clone().multiplyScalar(1/count);
+ for(let i=0;i<count;i++)for(const axis of ['x','z','y']){if(Math.abs(step[axis])<EPS)continue;const end=a.clone();end[axis]+=step[axis];a.lerp(end,clipFraction(a,end,boxes,radius))}
+ return {x:a.x,y:a.y,z:a.z};
 }
 export function perspectiveCamera(map,actor,width,height,{liquids=null}={}){
  const c=map.camera,angle=Number.isFinite(c.angle)?c.angle:0,tilt=Number.isFinite(c.tilt)?c.tilt:.5,axes=cameraAxes(angle,c.mode==='third'?W.clamp(tilt,.08,.96):tilt),camera=new T.PerspectiveCamera(c.mode==='first'?78:c.mode==='fly'?75:48,width/Math.max(1,height),.05,180);
  if(c.mode==='fly'){let p=c.fly||{x:map.width/2,y:10,z:map.height/2};camera.position.set(p.x,p.y,p.z);camera.lookAt(camera.position.clone().add(axes.forward))}
  else if(c.mode==='first'){
   if(!actor)return null;
-  const p=W.center(actor);camera.position.set(p.x,W.elevation(actor,map)+W.eyeHeight(actor),p.y);camera.lookAt(camera.position.clone().add(axes.forward));
+  const p=W.center(actor);camera.near=.025;camera.position.set(p.x,W.elevation(actor,map)+Math.min(W.eyeHeight(actor),c.firstEye??Infinity),p.y);camera.lookAt(camera.position.clone().add(axes.forward));
  }
  else{
   if(!actor)return null;
