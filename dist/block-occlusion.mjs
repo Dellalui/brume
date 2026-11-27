@@ -89,7 +89,7 @@ function forSectors(x0,y0,x1,y1,fn){
 // The one-cell halo includes all possible adjacent unit faces; arbitrary
 // placed volumes are indexed into every sector that their bounds overlap.
 export function createChunkOcclusionCache(){
- let state=null,indexBuilds=0,chunkBuilds=0,chunkHits=0,removalUpdates=0,removedBoxes=0,invalidatedChunks=0;
+ let state=null,activeSectors=new Map(),indexBuilds=0,chunkBuilds=0,chunkHits=0,removalUpdates=0,removedBoxes=0,invalidatedChunks=0;
  const context=map=>JSON.stringify([map.width,map.height,map.groups.map(g=>[g.id,g.visible]),map.chunks.length]);
  const revisionOf=(map,slice,mode,epoch)=>JSON.stringify([map.blockRevision,map.buildRevision,epoch,slice,mode,context(map)]);
  const matches=(s,map,slice,mode,epoch)=>s&&s.map===map&&s.revision===revisionOf(map,slice,mode,epoch)&&s.chunks===map.chunks&&s.blocks===map.blocks&&s.objects===map.objects;
@@ -120,7 +120,7 @@ export function createChunkOcclusionCache(){
   const hasUnit=k=>s.index.unitOwners.get(k)?.some(active)??false;
   const wanted=region?new Set(region.chunks):new Set(s.groups.keys());
   for(const id of activeObjects){const b=s.placedById.get(id);if(b)wanted.add(b.sector)}
-  const hiddenObjects=new Set(),hiddenVoxels=new Set(),fullUnits=new Set();let candidates=0;
+  const hiddenObjects=new Set(),hiddenVoxels=new Set(),fullUnits=new Set();let candidates=0;activeSectors=new Map();
   for(const id of wanted){
    const g=s.groups.get(id);if(!g)continue;
    const signature=g.voxelDeps.map(k=>activeVoxel(k)?'1':'0').join('')+'|'+g.placedDeps.map(b=>active(b)?'1':'0').join('');
@@ -135,7 +135,7 @@ export function createChunkOcclusionCache(){
     g.variants.set(signature,result);
     if(g.variants.size>4)g.variants.delete(g.variants.keys().next().value);
    }
-   candidates+=result.candidates;
+   activeSectors.set(id,result);candidates+=result.candidates;
    for(const k of result.fullUnits)fullUnits.add(k);
    for(const k of result.hiddenObjects)hiddenObjects.add(k);
    for(const k of result.hiddenVoxels)hiddenVoxels.add(k);
@@ -177,5 +177,5 @@ export function createChunkOcclusionCache(){
   s.objects=map.objects;s.revision=revisionOf(map,s.slice,s.mode,epoch);
   removalUpdates++;invalidatedChunks+=dirty.size;if(onDirty){const sectors=new Set();for(const g of dirty)for(const id of g.renderSectors)sectors.add(id);onDirty(sectors)}return true;
  }
- return {collect,beginRemoval,finishRemoval,stats:()=>({occlusionIndexBuilds:indexBuilds,occlusionChunkBuilds:chunkBuilds,occlusionChunkHits:chunkHits,occlusionRemovalUpdates:removalUpdates,occlusionRemovedBoxes:removedBoxes,occlusionInvalidatedChunks:invalidatedChunks}),reset(){state=null}};
+ return {collect,beginRemoval,finishRemoval,sectorResults:()=>activeSectors,stats:()=>({occlusionIndexBuilds:indexBuilds,occlusionChunkBuilds:chunkBuilds,occlusionChunkHits:chunkHits,occlusionRemovalUpdates:removalUpdates,occlusionRemovedBoxes:removedBoxes,occlusionInvalidatedChunks:invalidatedChunks}),reset(){state=null;activeSectors=new Map()}};
 }

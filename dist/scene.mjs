@@ -8,6 +8,7 @@ import {createAssetLibrary} from './asset-models.mjs';
 import {createRenderRegion} from './render-region.mjs';
 import {createReliefStream} from './relief-stream.mjs';
 import {createReliefSectorPlans} from './relief-sector-plans.mjs';
+import {createReliefWorkerClient} from './relief-worker-client.mjs';
 import {indexGroundEdits,groundChunkDescriptor} from './ground-rectangles.mjs';
 import * as T from './vendor/three.module.min.js';
 import {perspectiveCamera,sweepCameraMotion} from './navigation.mjs';
@@ -32,7 +33,7 @@ import {isCrystal,transparentShell} from './transparent-shell.mjs';
 import {makeShadowVolume,shadowVolumeGeometry,contactShadowTexture,lightingAnchor,selectSceneLights,selectLocalLights,pointShadowBudget} from './shadow-system.mjs';
 const fogColor=new T.Color('#101b19');
 export function createTacticalCamera(view,width,height){let camera=new T.OrthographicCamera(),pixels=Math.SQRT2*view.scale;camera.left=-view.ox/pixels;camera.right=(width-view.ox)/pixels;camera.top=view.oy/pixels;camera.bottom=-(height-view.oy)/pixels;let distance=Math.max(600,Math.max(view.cx,view.cy)*4+100);camera.near=.1;camera.far=distance*3;let a=view.angle,elevation=Math.asin(view.tilt),fx=(Math.cos(a)+Math.sin(a))/Math.SQRT2,fz=(Math.cos(a)-Math.sin(a))/Math.SQRT2;camera.position.set(view.cx+fx*Math.cos(elevation)*distance,Math.sin(elevation)*distance,view.cy+fz*Math.cos(elevation)*distance);camera.lookAt(view.cx,0,view.cy);camera.updateProjectionMatrix();camera.updateMatrixWorld(true);return camera}
-export function renderer(canvas,{createRenderer=p=>new T.WebGLRenderer(p),createCanvas=()=>document.createElement('canvas')}={}){
+export function renderer(canvas,{createRenderer=p=>new T.WebGLRenderer(p),createCanvas=()=>document.createElement('canvas'),reliefWorkerFactory=()=>typeof Worker==='undefined'?null:new Worker(new URL('./relief-worker.mjs',import.meta.url),{type:'module'})}={}){
  let gpu;try{gpu=createRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'})}catch(error){let notice=document.createElement('div');notice.className='webgl-error';notice.setAttribute('role','alert');notice.textContent='La scène 3D nécessite WebGL 2. Activez l’accélération graphique de votre navigateur puis rechargez cette page.';canvas.parentElement.append(notice);let view={cx:0,cy:0,ox:0,oy:0,scale:16,angle:0,tilt:.5};return{render:()=>{},pick:()=>null,world:(x,y)=>W.unproject(x,y,view),screen:(x,y,z=0)=>W.project(x,y,z,view),view:()=>view,error};}
  gpu.setClearColor(fogColor);gpu.outputColorSpace=T.SRGBColorSpace;gpu.toneMapping=T.ACESFilmicToneMapping;gpu.toneMappingExposure=1;gpu.shadowMap.enabled=true;gpu.shadowMap.type=T.PCFShadowMap;gpu.shadowMap.autoUpdate=false;
  const scene=new T.Scene(),objects=new T.Group(),overlays=new T.Group(),ray=new T.Raycaster(),floorPlane=new T.Plane(new T.Vector3(0,1,0),0),pointer=new T.Vector2();scene.background=fogColor;scene.add(objects,overlays);const environment=createEnvironment(scene);const groundMarkers=createGroundMarkers(createCanvas);scene.add(groundMarkers.group);
@@ -64,17 +65,16 @@ if(cloudShadowEnabled>0.5&&cloudShadowStrength>0.001&&cloudCoverage>0.05){vec2 c
 gl_FragColor.rgb=mix(vec3(0.0052,0.0110,0.0097),gl_FragColor.rgb,visibility);`);if(block===true){shader.vertexShader='varying vec3 tacticalFaceNormal;\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('tacticalWorld=(modelMatrix*tacticalP).xz;',`tacticalWorld=(modelMatrix*tacticalP).xz;\nvec3 tacticalN=normal;\n#ifdef USE_INSTANCING\n tacticalN=mat3(instanceMatrix)*tacticalN;\n#endif\n tacticalFaceNormal=normalize(mat3(modelMatrix)*tacticalN);`);shader.fragmentShader='varying vec3 tacticalFaceNormal;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('vec4 tacticalSample=texture2D(tacticalSight,(tacticalWorld-tacticalOrigin)/tacticalSize);',`vec2 tacticalOutside=floor(tacticalWorld+normalize(tacticalFaceNormal).xz*.035);\nvec2 tacticalInside=floor(tacticalWorld-normalize(tacticalFaceNormal).xz*.035);\nvec4 tacticalSample=texture2D(tacticalSight,(tacticalOutside-tacticalOrigin+.5)/tacticalSize);`);shader.fragmentShader=shader.fragmentShader.replace('float manualFog=texture2D(tacticalSight,(floor(tacticalWorld)-tacticalOrigin+0.5)/tacticalSize).g;',`float manualFog=max(tacticalSample.g,texture2D(tacticalSight,(tacticalInside-tacticalOrigin+.5)/tacticalSize).g);`);}};
  floorMaterial.onBeforeCompile=applyTacticalFog;surfaces.apply(floorMaterial,{kind:'grass',face:'ground',projection:'ground',terrain:true,grassCap:false});
  const reliefGroup=new T.Group();reliefGroup.name='Relief en blocs';scene.add(reliefGroup);let reliefKey='',reliefMap=null;const blockGeo=new T.BoxGeometry(1,1,1),reliefBatches=new Map(),faceGeometries=new Map(),transparentBatches=new Map(),earthBatches=new Map(),crystalPlans=new Map();const blockMaterials=new Map(),liquidMaterials=new Map(),liquidPickMaterial=new T.MeshBasicMaterial({visible:false}),liquidCache=createLiquidCache();
- let liquidCount=0,liquidBuilds=0,liquidResult=null,liquidRenderKey='',reliefBuilds=0,occlusionBuilds=0,reliefScope=null,phaseMs={};const reliefStream=createReliefStream(),chunkOcclusion=createChunkOcclusionCache(),sectorPlans=createReliefSectorPlans();let localReliefEdit=null;
+ let liquidCount=0,liquidBuilds=0,liquidResult=null,liquidRenderKey='',reliefBuilds=0,occlusionBuilds=0,reliefScope=null,phaseMs={};const reliefStream=createReliefStream(),chunkOcclusion=createChunkOcclusionCache(),sectorPlans=createReliefSectorPlans();let localReliefEdit=null,asyncRelief=null,pendingReliefUploads=[],reliefUploadSectors=0,reliefWorkerFallbacks=0;const reliefWorker=createReliefWorkerClient(reliefWorkerFactory);
  function removeReliefMesh(m){reliefGroup.remove(m);if(m.userData.liquidSurface||m.userData.transparentShell)m.geometry.dispose();else m.dispose()}
- function clearRelief(){liquidCount=0;liquidResult=null;liquidRenderKey='';for(const [key,entry]of reliefBatches)dropBatch(key,entry);for(let m of [...reliefGroup.children])removeReliefMesh(m);transparentBatches.clear();earthBatches.clear();crystalPlans.clear();sectorPlans.reset();localReliefEdit=null}
+ function clearRelief(){liquidCount=0;liquidResult=null;liquidRenderKey='';for(const [key,entry]of reliefBatches)dropBatch(key,entry);for(let m of [...reliefGroup.children])removeReliefMesh(m);transparentBatches.clear();earthBatches.clear();crystalPlans.clear();sectorPlans.reset();localReliefEdit=null;asyncRelief=null;pendingReliefUploads=[];reliefWorker.cancel()}
  function beginRelief(){for(const m of [...reliefGroup.children])if(!m.userData.reliefBatch&&!m.userData.transparentShell&&!m.userData.liquidSurface&&!m.userData.liquidSource&&!m.userData.earth)removeReliefMesh(m)}
  function clearLiquidMeshes(){for(const m of [...reliefGroup.children])if(m.userData.liquidSurface||m.userData.liquidSource)removeReliefMesh(m);liquidCount=0;liquidResult=null;liquidRenderKey=''}
  function faceGeometry(face){let g=faceGeometries.get(face);if(g)return g;const group=blockGeo.groups[face];g=blockGeo.clone();g.clearGroups();g.setIndex(Array.from(blockGeo.index.array.slice(group.start,group.start+group.count)));faceGeometries.set(face,g);return g}
  function dropBatch(key,entry){removeReliefMesh(entry.mesh);if(entry.fade)removeReliefMesh(entry.fade);reliefBatches.delete(key)}
- function syncReliefBatches(groups,planned=null){
-  const wanted=new Set(),cut=!!cutUniforms.blockCutEnabled.value,full=occlusion.fullUnits||new Set();
-  for(const plan of planned||reliefPlan(groups,full,cut,k=>W.BLOCKS[k]?.opaque&&W.BLOCKS[k]?.opacity===1,Math.max(last.map.width,last.map.height)>64)){
-   const {key,kind,face,cells}=plan,signature=plan.signature??reliefSignature(cells);wanted.add(key);
+ function applyReliefPlan(plan){
+  const cut=!!cutUniforms.blockCutEnabled.value;
+   const {key,kind,face,cells}=plan,signature=plan.signature??reliefSignature(cells);
    let entry=reliefBatches.get(key);
    if(!entry||entry.mesh.instanceMatrix.count<cells.length){
     if(entry)dropBatch(key,entry);
@@ -85,18 +85,46 @@ gl_FragColor.rgb=mix(vec3(0.0052,0.0110,0.0097),gl_FragColor.rgb,visibility);`);
     if(cut&&face===null){entry.fade=addBlockFade(mesh,kind);entry.fade.userData.reliefBatch=key}
    }
    const {mesh,fade}=entry;entry.lastUsed=frame;if(mesh.parent!==reliefGroup){reliefGroup.add(mesh);if(fade)reliefGroup.add(fade);shadowDirty=true}mesh.userData.blocks=cells;if(fade)fade.userData.blocks=cells;
-   if(entry.signature===signature)continue;
-   mesh.count=cells.length;for(let i=0;i<cells.length;i++){const b=cells[i];dummy.position.set(b.x+.5,b.z+b.h/2,b.y+.5);dummy.scale.set(b.w||1,b.h,b.d||1);dummy.rotation.y=-(b.angle||0);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix)}
-   mesh.instanceMatrix.needsUpdate=true;mesh.computeBoundingSphere();if(fade){fade.count=mesh.count;fade.boundingSphere=mesh.boundingSphere}
+   if(entry.signature===signature)return;
+   mesh.count=cells.length;if(plan.matrices){mesh.instanceMatrix.array.set(plan.matrices);mesh.boundingSphere=new T.Sphere(new T.Vector3(...plan.sphere.slice(0,3)),plan.sphere[3])}else{for(let i=0;i<cells.length;i++){const b=cells[i];dummy.position.set(b.x+.5,b.z+b.h/2,b.y+.5);dummy.scale.set(b.w||1,b.h,b.d||1);dummy.rotation.y=-(b.angle||0);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix)}
+   mesh.computeBoundingSphere()}mesh.instanceMatrix.needsUpdate=true;if(fade){fade.count=mesh.count;fade.boundingSphere=mesh.boundingSphere}
    entry.signature=signature;shadowDirty=true;
-  }
+  dummy.scale.set(1,1,1);dummy.rotation.set(0,0,0);
+ }
+ function parkReliefBatches(wanted,sector=null){
   // Park offscreen batches outside the scene graph: no draw calls, picking,
   // matrix traversal or shadow passes. Bound the retained instance buffers.
   const parked=[];let parkedCapacity=0;
-  for(const [key,entry]of reliefBatches)if(!wanted.has(key)){if(entry.mesh.parent===reliefGroup){reliefGroup.remove(entry.mesh);if(entry.fade)reliefGroup.remove(entry.fade);shadowDirty=true}parked.push([key,entry]);parkedCapacity+=entry.mesh.instanceMatrix.count}
+  for(const [key,entry]of reliefBatches)if(entry.mesh.parent!==reliefGroup||(!wanted.has(key)&&(sector===null||key.split('|')[1]===sector))){if(entry.mesh.parent===reliefGroup){reliefGroup.remove(entry.mesh);if(entry.fade)reliefGroup.remove(entry.fade);shadowDirty=true}parked.push([key,entry]);parkedCapacity+=entry.mesh.instanceMatrix.count}
   parked.sort((a,b)=>a[1].lastUsed-b[1].lastUsed);let remaining=parked.length;
   for(const [key,entry]of parked){if(remaining<=256&&parkedCapacity<=16384)break;parkedCapacity-=entry.mesh.instanceMatrix.count;remaining--;dropBatch(key,entry)}
-  dummy.scale.set(1,1,1);dummy.rotation.set(0,0,0);
+ }
+ function syncReliefBatches(groups,planned=null){
+  const cut=!!cutUniforms.blockCutEnabled.value,full=occlusion.fullUnits||new Set();
+  const plans=planned||reliefPlan(groups,full,cut,k=>W.BLOCKS[k]?.opaque&&W.BLOCKS[k]?.opacity===1,Math.max(last.map.width,last.map.height)>64);
+  const wanted=new Set();for(const plan of plans){wanted.add(plan.key);applyReliefPlan(plan)}parkReliefBatches(wanted);
+ }
+ function queueReliefUploads(plans){
+  const bySector=new Map(),get=k=>{if(!bySector.has(k))bySector.set(k,{sector:k,plans:[],wanted:new Set(),changed:false,bytes:0});return bySector.get(k)};
+  for(const plan of plans){
+   const job=get(plan.key.split('|')[1]);job.plans.push(plan);job.wanted.add(plan.key);
+   const entry=reliefBatches.get(plan.key);if(!entry||entry.signature!==plan.signature||entry.mesh.parent!==reliefGroup){job.changed=true;job.bytes+=plan.cells.length*64}
+  }
+  for(const [key,entry]of reliefBatches)if(entry.mesh.parent===reliefGroup){const job=get(key.split('|')[1]);if(!job.wanted.has(key))job.changed=true}
+  pendingReliefUploads=[];
+  for(const job of bySector.values())if(job.changed)pendingReliefUploads.push(job);else for(const plan of job.plans)applyReliefPlan(plan);
+  const distance=job=>{const [x,y]=job.sector.split(',').map(Number);return (x*16+8-camera.position.x)**2+(y*16+8-camera.position.z)**2};
+  pendingReliefUploads.sort((a,b)=>distance(a)-distance(b));
+ }
+ function drainReliefUploads(){
+  if(!pendingReliefUploads.length)return;
+  const start=performance.now();let bytes=0,processed=0;
+  // A sector is atomic. Check the CPU/transfer budget between sectors;
+  // exceptionally large individual sectors can exceed it.
+  while(pendingReliefUploads.length&&(!processed||performance.now()-start<1&&bytes+pendingReliefUploads[0].bytes<=256*1024)){
+   const job=pendingReliefUploads.shift();for(const plan of job.plans)applyReliefPlan(plan);
+   parkReliefBatches(job.wanted,job.sector);reliefUploadSectors++;processed++;bytes+=job.bytes;
+  }
  }
  function liquidMaterial(kind){
   if(liquidMaterials.has(kind))return liquidMaterials.get(kind);
@@ -233,13 +261,39 @@ if(blockCutPass>0.5)gl_FragColor.a*=cutAlpha;`)};m.customProgramCacheKey=()=> 'b
  function updateRelief(opts){
   const imageKey=reliefScope.visibleObjects.filter(o=>opts.images.get(o.imageId)).map(o=>o.id+o.imageId).join(',');
   let key=opts.map.id+'|'+occlusionKey+'|'+(opts.map.blocks?reliefScope.reliefKey:terrainGeneration)+'|'+(opts.map.blockRevision||0)+'|'+(opts.map.buildRevision||0)+'|'+opts.mode+'|'+(opts.blockSlice??32)+'|'+imageKey;
-  if(reliefMap===opts.map&&key===reliefKey)return;
-  if(reliefMap!==opts.map)clearRelief();reliefMap=opts.map;reliefKey=key;reliefBuilds++;beginRelief();
-  const groups=new Map(),origin=fogUniforms.tacticalOrigin.value,size=fogUniforms.tacticalSize.value;
+  if(reliefMap===opts.map&&key===reliefKey){drainReliefUploads();return}
+  if(reliefMap!==opts.map)clearRelief();
+  const groups=new Map(),origin=fogUniforms.tacticalOrigin.value,size=fogUniforms.tacticalSize.value,cut=!!cutUniforms.blockCutEnabled.value;
   if(opts.map.blocks){
-   const cut=!!cutUniforms.blockCutEnabled.value,prepared=sectorPlans.build(opts,reliefScope,occlusion,renderRegion,origin,size,cut,localReliefEdit,imageKey);localReliefEdit=null;
-   syncEarthBatches(prepared.earth,cut);renderLiquids(opts,prepared.groups,origin,size);renderTransparentBlocks(prepared.groups);syncReliefBatches(prepared.groups,prepared.plans);shadowDirty=true;return;
+   let prepared=null,progressive=false,job=null;
+   // Only explicit, verified impact edits in the MJ construction view use
+   // asynchronous geometry. Normal edits and unsupported browsers are exact
+   // synchronous fallbacks. Keep rendering the last complete sector meanwhile.
+   if(reliefWorker.available&&opts.building&&opts.mode==='mj'&&!cut&&localReliefEdit&&Math.max(opts.map.width,opts.map.height)>64){
+    if(asyncRelief?.map===opts.map&&asyncRelief.key===key){
+     if(!asyncRelief.done)return;
+     const request=asyncRelief;asyncRelief=null;
+     if(request.results){try{prepared=sectorPlans.finish(request.job,request.results);progressive=true}catch{reliefWorkerFallbacks++}}
+     else reliefWorkerFallbacks++;
+    }else{
+     job=sectorPlans.prepare(opts,reliefScope,occlusion,renderRegion,origin,size,cut,localReliefEdit,imageKey);
+     if(job.useLocal&&job.pending.length){
+      const request={map:opts.map,key,job,done:false,results:null};asyncRelief=request;pendingReliefUploads=[];
+      try{
+       const payload=sectorPlans.workerPayload(job,chunkOcclusion.sectorResults());
+       if(reliefWorker.submit(payload,results=>{if(asyncRelief!==request)return;request.results=results;request.done=true;last.onAssetReady?.()}))return;
+      }catch{reliefWorkerFallbacks++}
+      asyncRelief=null;
+     }
+    }
+   }
+   if(!prepared){reliefWorker.cancel();asyncRelief=null;pendingReliefUploads=[];prepared=sectorPlans.build(opts,reliefScope,occlusion,renderRegion,origin,size,cut,localReliefEdit,imageKey)}
+   reliefMap=opts.map;reliefKey=key;reliefBuilds++;beginRelief();localReliefEdit=null;
+   syncEarthBatches(prepared.earth,cut);renderLiquids(opts,prepared.groups,origin,size);renderTransparentBlocks(prepared.groups);
+   if(progressive){queueReliefUploads(prepared.plans);drainReliefUploads()}else syncReliefBatches(prepared.groups,prepared.plans);
+   shadowDirty=true;return;
   }
+  reliefWorker.cancel();asyncRelief=null;pendingReliefUploads=[];reliefMap=opts.map;reliefKey=key;reliefBuilds++;beginRelief();
   localReliefEdit=null;sectorPlans.reset();syncEarthBatches(new Map(),false);clearLiquidMeshes();renderTransparentBlocks(new Map());syncReliefBatches(new Map());for(let[k,b]of Object.entries(opts.map.terrain||{})){let[x,y]=k.split(',').map(Number),h=W.terrainHeight(opts.map,x,y);if(!h||!W.activeCell(opts.map,x,y)||x<origin.x||y<origin.y||x>=origin.x+size.x||y>=origin.y+size.y)continue;let kind=W.BLOCKS[b.material]?b.material:'grass';if(!groups.has(kind))groups.set(kind,[]);groups.get(kind).push({x,y,h})}for(let[k,cells]of groups){let mesh=new T.InstancedMesh(blockGeo,blockMaterial(k).mats,cells.length);for(let i=0;i<cells.length;i++){let b=cells[i];dummy.position.set(b.x+.5,b.h/2,b.y+.5);dummy.scale.set(b.w||1,b.h,b.d||1);dummy.rotation.y=-(b.angle||0);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix)}dummy.scale.set(1,1,1);mesh.castShadow=true;mesh.receiveShadow=true;mesh.computeBoundingSphere();reliefGroup.add(mesh)}shadowDirty=true}
  const overlayCanvas=createCanvas(),ctx=overlayCanvas.getContext('2d'),bufferSizer=createBufferSizer();overlayCanvas.className='scene-labels';overlayCanvas.style.cssText='position:absolute;inset:0;pointer-events:none;width:100%;height:100%';canvas.parentElement?.append(overlayCanvas);
  function textureFor(im){if(!textures.has(im)){let texture=new T.Texture(im);texture.colorSpace=T.SRGBColorSpace;texture.onUpdate=()=>spriteResidency.note(texture);texture.needsUpdate=true;textures.set(im,texture)}const texture=textures.get(im);textures.delete(im);textures.set(im,texture);return texture}
@@ -430,7 +484,7 @@ if(blockCutPass>0.5)gl_FragColor.a*=cutAlpha;`)};m.customProgramCacheKey=()=> 'b
  function screen(x,y,z=(last.map?.editLevel||0)*(last.map?.levelHeight||W.LEVEL_HEIGHT)+(!(last.map?.editLevel)?W.terrainHeight(last.map,x,y):0)){let p=new T.Vector3(x,z,y).project(camera);return{x:(p.x+1)*width/2,y:(1-p.y)*height/2}}
  function cutAlphaAt(point){return cutUniforms.blockCutEnabled.value?blockCutAlpha(point,cutUniforms.blockCutOrigin.value,cutUniforms.blockCutDirection.value,cutUniforms.blockCutDistance.value,cutUniforms.blockCutRadius.value,cutUniforms.blockCutOpacity.value):1}
  const cutMatrix=new T.Matrix4(),cutCenter=new T.Vector3();
- function solidHit(hit){const mesh=hit.object;if(mesh.userData.liquidSource)return !!last.building;if(mesh.userData.transparentShell)return true;if(!cutUniforms.blockCutEnabled.value)return true;if(mesh.isInstancedMesh&&hit.instanceId!==undefined){mesh.getMatrixAt(hit.instanceId,cutMatrix);cutCenter.setFromMatrixPosition(cutMatrix).applyMatrix4(mesh.matrixWorld)}else cutCenter.setFromMatrixPosition(mesh.matrixWorld);return cutAlphaAt(cutCenter)>=.999}
+ function solidHit(hit){const mesh=hit.object;if(asyncRelief||localReliefEdit||pendingReliefUploads.length){const b=mesh.userData.blocks?.[hit.instanceId];if(b?.id!==undefined&&!objectById.has(b.id))return false;if(b&&b.id===undefined&&!last.map.blocks?.[b.x+','+b.y]?.[b.z])return false;if(mesh.userData.earth&&(asyncRelief||localReliefEdit)&&localReliefEdit?.changes.groundColumns?.length)return false;}if(mesh.userData.liquidSource)return !!last.building;if(mesh.userData.transparentShell)return true;if(!cutUniforms.blockCutEnabled.value)return true;if(mesh.isInstancedMesh&&hit.instanceId!==undefined){mesh.getMatrixAt(hit.instanceId,cutMatrix);cutCenter.setFromMatrixPosition(cutMatrix).applyMatrix4(mesh.matrixWorld)}else cutCenter.setFromMatrixPosition(mesh.matrixWorld);return cutAlphaAt(cutCenter)>=.999}
  function interactionRay(x,y){if(!camera||!last.map||width<=0||height<=0)return null;pointer.set(x/width*2-1,1-y/height*2);ray.setFromCamera(pointer,camera);const a=ray.ray.origin,d=ray.ray.direction;return {origin:{x:a.x,y:a.z,z:a.y},direction:{x:d.x,y:d.z,z:d.y},map:last.map}}
  // The creative cursor is a short segment, not an unlimited ray. Keep the
  // shared raycaster state scoped so ordinary map picking remains unlimited.
@@ -503,5 +557,5 @@ if(blockCutPass>0.5)gl_FragColor.a*=cutAlpha;`)};m.customProgramCacheKey=()=> 'b
  function pickAt(x,y,types,frontmost,maxDistance,query){if(!camera)return null;pointer.set(x/width*2-1,1-y/height*2);ray.setFromCamera(pointer,camera);const front=frontmost?(query?query.front:ray.intersectObjects([...reliefGroup.children.filter(m=>m.visible&&!m.userData.cutOverlay&&!m.userData.liquidSource&&!m.userData.liquidSurface),...terrainGroup.children.filter(m=>m.visible)],false).find(hit=>hit.object.userData.groundChunk||solidHit(hit))):null;const objectFar=ray.far;if(front)ray.far=Math.min(ray.far,front.distance+.01);let roots=[...cache.values()].map(i=>i.root).filter(r=>r.visible&&(r.userData.alpha>=.3||r.userData.object.id===last.selection));for(let hit of ray.intersectObjects(roots,true)){if(hit.distance>maxDistance||front&&hit.distance>front.distance+.01)break;let child=hit.object,id=child.userData.objectId;if(W.levelOf(cache.get(id)?.root.userData.object)!==(last.map.editLevel||0)&&child.userData.type!=='stairs')continue;if(!child.userData.pickable||!id||types&&!types.includes(child.userData.type))continue;let item=cache.get(id),o=item.root.userData.object,p=W.center(o);if(last.mode!=='mj'&&(last.sight?.get(W.cellKey(p.x,p.y))?.detail??1)<.4)continue;let im=item.root.userData.image;if(im?.pixels&&hit.uv){let u=W.clamp((!W.character(o)&& (!!o.flip !== !!(o.tokenFixed&&!o.flat&&tokenBack(o))))?1-hit.uv.x:hit.uv.x,0,.999),v=W.clamp(1-hit.uv.y,0,.999),index=(Math.floor(v*im.height)*im.width+Math.floor(u*im.width))*4+3;if(im.pixels[index]<18)continue}return id}ray.far=objectFar;let p=query?query.point:world(x,y,maxDistance);if(!Number.isFinite(p.z)||Math.hypot(p.x-camera.position.x,p.y-camera.position.z,p.z-camera.position.y)>maxDistance)return null;if(p.objectId&&(!types||types.includes('block')))return p.objectId;return last.map.objects.filter(o=>o.type.startsWith('fx_')&&W.levelOf(o)===(last.map.editLevel||0)&&cache.get(o.id)?.root.visible).reverse().find(o=>{let b=W.bounds(o);return p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h})?.id||null}
  // Preview reuses the exact same surface intersections for both questions.
  function aimAt(x,y,reach){const query={};query.point=world(x,y,reach,query);return{point:query.point,id:pick(x,y,null,true,reach,query)}}
- return{render,pick,world,aimAt,screen,interactionRay,beginImpactEdit:chunkOcclusion.beginRemoval,finishImpactEdit:(map,epoch,token,changes)=>{localReliefEdit=null;return chunkOcclusion.finishRemoval(map,epoch,token,changes,sectors=>{localReliefEdit={map,from:token.epoch,to:epoch,sectors,changes,previousBlockRevision:token.blockRevision,previousBuildRevision:token.buildRevision,blockRevision:map.blockRevision||0,buildRevision:map.buildRevision||0}})},stats:()=>({triangles:gpu.info?.render?.triangles??0,calls:gpu.info?.render?.calls??0,shadowUpdates,pointShadows:pointLights.filter(l=>l.castShadow).length,...bufferSizer.stats(),...spriteResidency.stats(),terrainBuilds,terrainReuses,terrainPreloads,reliefBuilds,...sectorPlans.stats(),occlusionBuilds,...chunkOcclusion.stats(),liquidBuilds,phaseMs,parkedReliefBatches:[...reliefBatches.values()].filter(e=>e.mesh.parent!==reliefGroup).length,terrainChunks:terrainChunks.size,residentChunks:renderRegion?.chunks.size??0,groundPlanes,groundCells:terrain?.count||0}),clipFlyMovement:(map,from,to)=>sweepCameraMotion(map,from,to,liquidCache(map,W,'mj')),hasAnimation:()=>animations,view:()=>view,debug:()=>({scene,camera,environment,renderRegion,terrainChunks,groundBatch,occlusion,assetLibrary,cache,groundMarkers,fxCache,effectsLayer,thrownVisuals,reliefGroup,overlays,ghost,gpu,terrain,sightTexture,cutUniforms,pointLights,surfaces,liquidCount}),dispose(){chunkOcclusion.reset();cancelGroundWarm();spriteResidency.dispose();environment.dispose();assetLibrary.dispose();groundMarkers.dispose();proxyGeometry.dispose();contactTexture.dispose();clearRelief();liquidPickMaterial.dispose();for(const m of liquidMaterials.values())m.dispose();blockGeo.dispose();for(const g of faceGeometries.values())g.dispose();for(let m of blockMaterials.values())for(let material of new Set([...m.mats,...m.fadeMats]))material.dispose();surfaces.dispose();for(let entry of fxCache.values()){entry.fx.dispose()}thrownVisuals.dispose();fxFactory.dispose();for(let {root}of cache.values())disposeModel(root);if(ghost)disposeModel(ghost);for(let entry of ghostExtras.values())disposeModel(entry.root);clearOverlays();clearSightOutline();sightTexture?.dispose();floorGeo.dispose();terrainGeo.dispose();floorMaterial.dispose();for(let t of tokenTextures.values())t.dispose();for(let t of textures.values())t.dispose();if(groundBatch){groundBatch.geometry.dispose();groundBatch.dispose()}terrainChunks.clear();gpu.dispose();overlayCanvas.remove?.()}};
+ return{render,pick,world,aimAt,screen,interactionRay,beginImpactEdit:chunkOcclusion.beginRemoval,finishImpactEdit:(map,epoch,token,changes)=>{const previous=localReliefEdit;localReliefEdit=null;pendingReliefUploads=[];return chunkOcclusion.finishRemoval(map,epoch,token,changes,sectors=>{const chain=previous?.map===map&&previous.to===token.epoch&&previous.blockRevision===token.blockRevision&&previous.buildRevision===token.buildRevision;localReliefEdit={map,from:chain?previous.from:token.epoch,to:epoch,sectors:chain?new Set([...previous.sectors,...sectors]):sectors,changes:chain?{voxels:[...previous.changes.voxels,...changes.voxels],objects:[...previous.changes.objects,...changes.objects],ground:previous.changes.ground+changes.ground,groundColumns:[...previous.changes.groundColumns,...changes.groundColumns]}:changes,previousBlockRevision:chain?previous.previousBlockRevision:token.blockRevision,previousBuildRevision:chain?previous.previousBuildRevision:token.buildRevision,blockRevision:map.blockRevision||0,buildRevision:map.buildRevision||0}})},stats:()=>({triangles:gpu.info?.render?.triangles??0,calls:gpu.info?.render?.calls??0,shadowUpdates,pointShadows:pointLights.filter(l=>l.castShadow).length,...bufferSizer.stats(),...spriteResidency.stats(),terrainBuilds,terrainReuses,terrainPreloads,reliefBuilds,...sectorPlans.stats(),...reliefWorker.stats(),reliefWorkerFallbacks,reliefUploadSectors,reliefUploadPending:pendingReliefUploads.length,occlusionBuilds,...chunkOcclusion.stats(),liquidBuilds,phaseMs,parkedReliefBatches:[...reliefBatches.values()].filter(e=>e.mesh.parent!==reliefGroup).length,terrainChunks:terrainChunks.size,residentChunks:renderRegion?.chunks.size??0,groundPlanes,groundCells:terrain?.count||0}),clipFlyMovement:(map,from,to)=>sweepCameraMotion(map,from,to,liquidCache(map,W,'mj')),hasAnimation:()=>animations||pendingReliefUploads.length>0,view:()=>view,debug:()=>({scene,camera,environment,renderRegion,terrainChunks,groundBatch,occlusion,assetLibrary,cache,groundMarkers,fxCache,effectsLayer,thrownVisuals,reliefGroup,overlays,ghost,gpu,terrain,sightTexture,cutUniforms,pointLights,surfaces,liquidCount}),dispose(){reliefWorker.dispose();chunkOcclusion.reset();cancelGroundWarm();spriteResidency.dispose();environment.dispose();assetLibrary.dispose();groundMarkers.dispose();proxyGeometry.dispose();contactTexture.dispose();clearRelief();liquidPickMaterial.dispose();for(const m of liquidMaterials.values())m.dispose();blockGeo.dispose();for(const g of faceGeometries.values())g.dispose();for(let m of blockMaterials.values())for(let material of new Set([...m.mats,...m.fadeMats]))material.dispose();surfaces.dispose();for(let entry of fxCache.values()){entry.fx.dispose()}thrownVisuals.dispose();fxFactory.dispose();for(let {root}of cache.values())disposeModel(root);if(ghost)disposeModel(ghost);for(let entry of ghostExtras.values())disposeModel(entry.root);clearOverlays();clearSightOutline();sightTexture?.dispose();floorGeo.dispose();terrainGeo.dispose();floorMaterial.dispose();for(let t of tokenTextures.values())t.dispose();for(let t of textures.values())t.dispose();if(groundBatch){groundBatch.geometry.dispose();groundBatch.dispose()}terrainChunks.clear();gpu.dispose();overlayCanvas.remove?.()}};
 }
