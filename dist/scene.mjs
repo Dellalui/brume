@@ -49,7 +49,7 @@ vec4 tacticalP=vec4(transformed,1.0);
  tacticalWorld=(modelMatrix*tacticalP).xz;`);shader.fragmentShader='varying vec2 tacticalWorld;\nuniform sampler2D tacticalSight;\nuniform vec2 tacticalSize;\nuniform vec2 tacticalOrigin;\nuniform float tacticalMode;\nuniform float tacticalGrid;\nuniform float cloudShadowEnabled;\nuniform float cloudShadowStrength;\nuniform float cloudCoverage;\nuniform float cloudTime;\nuniform float cloudWind;\nuniform vec2 cloudDirection;\nfloat tacticalHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}\nfloat tacticalNoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(tacticalHash(i),tacticalHash(i+vec2(1.0,0.0)),f.x),mix(tacticalHash(i+vec2(0.0,1.0)),tacticalHash(i+vec2(1.0,1.0)),f.x),f.y);}\nfloat tacticalFbm(vec2 p){float n=0.0,a=0.55;for(int i=0;i<4;i++){n+=tacticalNoise(p)*a;p=p*2.03+vec2(17.3,9.1);a*=0.5;}return n;}\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',`#include <opaque_fragment>
 vec4 tacticalSample=texture2D(tacticalSight,(tacticalWorld-tacticalOrigin)/tacticalSize);
 float manualFog=texture2D(tacticalSight,(floor(tacticalWorld)-tacticalOrigin+0.5)/tacticalSize).g;
-float visibility=tacticalMode>0.5?mix(1.0,0.16,manualFog):tacticalSample.r*(1.0-manualFog);
+float visibility=tacticalMode>1.5?mix(1.0,0.035,manualFog):tacticalMode>0.5?mix(1.0,0.16,manualFog):tacticalSample.r*(1.0-manualFog);
 vec2 cellEdge=min(fract(tacticalWorld),1.0-fract(tacticalWorld));
 float gridLine=1.0-smoothstep(0.0,0.025,min(cellEdge.x,cellEdge.y));
 gl_FragColor.rgb=mix(gl_FragColor.rgb,gl_FragColor.rgb*1.28,gridLine*tacticalGrid*0.35);
@@ -266,7 +266,7 @@ renderLiquids(opts,groups,origin,size);renderTransparentBlocks(groups);syncRelie
   terrain=terrainGroup;terrain.count=logicalCells;groundPlanes=rects.length;
  }
 
- let nextMaskKey=[map.id,x0,y0,tw,th,opts.mode,opts.visionEpoch,opts.terrainEpoch,map.editLevel].join('|');if(nextMaskKey!==maskKey||opts.visionTransition||maskWasTransition){maskKey=nextMaskKey;if(opts.mode==='mj'&&!map.fog.length){for(let i=0;i<sightData.length;i+=4){sightData[i]=255;sightData[i+1]=sightData[i+2]=0;sightData[i+3]=255}}else{const fog=new Set(map.fog);for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){let k=W.cellKey(x,y),i=((y-y0)*tw+x-x0)*4,vis=opts.mode==='mj'?1:opts.sightDisplay?.get(k)??(opts.vision.has(k)?1:0);sightData[i]=Math.round(255*Math.max(vis,opts.explored.has(k)?.07:0));sightData[i+1]=fog.has(k)?255:0;sightData[i+2]=0;sightData[i+3]=255}}sightTexture.needsUpdate=true;}maskWasTransition=!!opts.visionTransition;fogUniforms.tacticalMode.value=opts.mode==='mj'?1:0;fogUniforms.tacticalGrid.value=opts.showGrid?1:0;
+ let nextMaskKey=[map.id,x0,y0,tw,th,opts.mode,opts.visionEpoch,opts.terrainEpoch,map.editLevel].join('|');if(nextMaskKey!==maskKey||opts.visionTransition||maskWasTransition){maskKey=nextMaskKey;if(opts.mode==='mj'&&!map.fog.length){for(let i=0;i<sightData.length;i+=4){sightData[i]=255;sightData[i+1]=sightData[i+2]=0;sightData[i+3]=255}}else{const fog=new Set(map.fog);for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){let k=W.cellKey(x,y),i=((y-y0)*tw+x-x0)*4,vis=opts.mode==='mj'?1:opts.sightDisplay?.get(k)??(opts.vision.has(k)?1:0);sightData[i]=Math.round(255*Math.max(vis,opts.explored.has(k)?.07:0));sightData[i+1]=fog.has(k)?255:0;sightData[i+2]=0;sightData[i+3]=255}}sightTexture.needsUpdate=true;}maskWasTransition=!!opts.visionTransition;fogUniforms.tacticalMode.value=opts.mode==='mj'?1:opts.map.camera.mode==='first'?2:0;fogUniforms.tacticalGrid.value=opts.showGrid?1:0;
  }
  function clearOverlays(){for(let child of [...overlays.children]){overlays.remove(child);child.geometry?.dispose();child.material?.dispose()}}
  function line(points,color,closed=false,depthTest=false){let ps=points.map(p=>new T.Vector3(p.x,p.z??((last.map?.editLevel||0)*(last.map?.levelHeight||W.LEVEL_HEIGHT)+(!(last.map?.editLevel)?W.terrainHeight(last.map,p.x,p.y):0)+.04),p.y));if(closed)ps.push(ps[0].clone());let g=new T.BufferGeometry().setFromPoints(ps),m=new T.LineBasicMaterial({color,transparent:true,opacity:.9,depthTest}),l=new T.Line(g,m);l.renderOrder=10;overlays.add(l)}
@@ -282,15 +282,20 @@ renderLiquids(opts,groups,origin,size);renderTransparentBlocks(groups);syncRelie
  let overlayKey='',overlayMap=null;
  function drawOverlays(opts){
  const chosen=opts.map.objects.find(o=>o.id===opts.selection),visiblePath=(opts.path||[]).map(p=>opts.mode==='mj'||opts.vision.has(W.cellKey(p.x,p.y))?p:null);
- const key=JSON.stringify([opts.terrainEpoch,opts.map.blockRevision,opts.mode,opts.map.camera.mode,opts.map.combat?.active,opts.observers?.map(o=>[o.id,o.x,o.y,o.facing,o.vision?.range,o.vision?.angle]),opts.showExtensions,opts.showChunks,opts.map.width,opts.map.height,(opts.showChunks||opts.showExtensions)?[terrainGeneration,opts.extensionStep,opts.map.chunks.length]:null,chosen?[chosen.id,chosen.x,chosen.y,chosen.x2,chosen.y2,chosen.w,chosen.d,chosen.occupancy,chosen.facing,W.elevation(chosen,opts.map),strength(chosen,opts)>.38]:null,visiblePath,opts.pathKind,opts.pathMoving,opts.brush]);
+ const key=JSON.stringify([opts.terrainEpoch,opts.map.blockRevision,opts.mode,opts.map.camera.mode,opts.map.combat?.active,opts.visionEpoch,opts.observers?.map(o=>[o.id,o.x,o.y,o.facing,o.vision?.range,o.vision?.angle]),opts.showExtensions,opts.showChunks,opts.map.width,opts.map.height,(opts.showChunks||opts.showExtensions)?[terrainGeneration,opts.extensionStep,opts.map.chunks.length]:null,chosen?[chosen.id,chosen.x,chosen.y,chosen.x2,chosen.y2,chosen.w,chosen.d,chosen.occupancy,chosen.facing,W.elevation(chosen,opts.map),strength(chosen,opts)>.38]:null,visiblePath,opts.pathKind,opts.pathMoving,opts.brush]);
  if(overlayMap===opts.map&&overlayKey===key)return;overlayKey=key;overlayMap=opts.map;
  clearOverlays();
  if(opts.map.combat?.active&&opts.mode!=='mj'){
   const a=opts.observers?.find(o=>o.id===opts.map.camera.followId)||opts.observers?.[0];
-  if(a){const p=W.center(a),r=a.vision?.range||12,half=(a.vision?.angle??180)*Math.PI/360,heading=a.facing||0;
-   const points=[];for(let i=0;i<=64;i++){const angle=heading-half+2*half*i/64,x=p.x+Math.sin(angle)*r,y=p.y-Math.cos(angle)*r;points.push({x,y,z:W.groundAt(opts.map,x,y)+.12})}
-   line(points,'#e7bc70',false,true);
-   if(half<Math.PI-.001)for(const end of [points[0],points.at(-1)])line([{x:p.x,y:p.y,z:W.elevation(a,opts.map)+.12},end],'#e7bc70',false,true);
+  if(a){const p=W.center(a),r=a.vision?.range||12,half=(a.vision?.angle??180)*Math.PI/360,heading=a.facing||0,positions=[],colors=[];
+   for(let y=Math.max(0,Math.floor(p.y-r));y<Math.min(opts.map.height,Math.ceil(p.y+r));y++)for(let x=Math.max(0,Math.floor(p.x-r));x<Math.min(opts.map.width,Math.ceil(p.x+r));x++){
+    const k=W.cellKey(x,y),dx=x+.5-p.x,dy=y+.5-p.y,d=Math.hypot(dx,dy),angle=Math.abs(W.mod(W.bearing(dx,dy)-heading+Math.PI,W.TAU)-Math.PI);
+    if(d>r||angle>half||!opts.vision.has(k)||!W.activeCell(opts.map,x,y))continue;
+    const z=W.surfaceNear(opts.map,x,y,W.elevation(a,opts.map),Infinity,.1)??W.groundAt(opts.map,x,y);
+    const t=new T.Color(d>r-1?'#e7bc70':'#82b7a2');
+    for(const [u,v] of [[0,0],[0,1],[1,1],[0,0],[1,1],[1,0]]){positions.push(x+u,z+.035,y+v);colors.push(t.r,t.g,t.b)}
+   }
+   if(positions.length){const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(positions,3));g.setAttribute('color',new T.Float32BufferAttribute(colors,3));const mesh=new T.Mesh(g,new T.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.23,depthWrite:false,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2}));mesh.renderOrder=9;overlays.add(mesh)}
   }
  }
  if(opts.showExtensions&&opts.mode==='mj'){
