@@ -32,10 +32,20 @@ export function lightingAnchor(map,camera){
  const sector=(n,max)=>Math.min(max,Math.max(0,Math.floor(Math.max(0,Math.min(max-1,n))/32)*32+16));
  return {x:sector(camera.position.x,map.width),y:sector(camera.position.z,map.height)};
 }
+// Keep a bounded stable top-k rather than sorting every source each frame.
+function topLights(sources,limit,valid,score,tie,compare){
+ const best=[];if(limit<=0)return best;
+ for(const s of sources){if(!valid(s))continue;const entry={s,score:score(s),tie:tie(s)};
+  if(best.length===limit&&compare(entry,best[best.length-1])>=0)continue;
+  let i=best.length;while(i>0&&compare(entry,best[i-1])<0)i--;
+  best.splice(i,0,entry);if(best.length>limit)best.pop();
+ }
+ return best.map(e=>e.s);
+}
 export function selectSceneLights(sources,anchor,limit=8){
  const score=s=>Math.hypot(s.x-anchor.x,s.y-anchor.y)-Math.min(8,s.radius||0)*.5-Math.min(2,s.power||0);
  const tie=s=>[s.owner??'',s.x,s.y,s.z??0,s.radius??0,s.color??''].join('|');
- return sources.filter(s=>s&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0).sort((a,b)=>Number(!!a.secondary)-Number(!!b.secondary)||score(a)-score(b)||tie(a).localeCompare(tie(b))).slice(0,limit);
+ return topLights(sources,limit,s=>s&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0,score,tie,(a,b)=>Number(!!a.s.secondary)-Number(!!b.s.secondary)||a.score-b.score||a.tie.localeCompare(b.tie));
 }
 
 // Four 256px point-shadow atlases use the nominal texel count of one 512px atlas.
@@ -47,5 +57,5 @@ export function selectLocalLights(sources,anchor,viewer,previous=[],limit=8){
  const stable=selectSceneLights(sources,anchor,1)[0];
  const id=s=>[s.owner,s.x,s.y,s.z,s.secondary].join('|'),old=new Set(previous.map(id));
  const score=s=>Math.hypot(s.x-viewer.x,s.y-viewer.y)-(s.radius||0)-(old.has(id(s))?2:0);
- return [...(stable?[stable]:[]),...sources.filter(s=>s!==stable&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0).sort((a,b)=>score(a)-score(b)||id(a).localeCompare(id(b))).slice(0,limit-(stable?1:0))];
+ if(limit<=0)return [];return [...(stable?[stable]:[]),...topLights(sources,limit-(stable?1:0),s=>s&&s!==stable&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0,score,id,(a,b)=>a.score-b.score||a.tie.localeCompare(b.tie))];
 }

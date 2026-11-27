@@ -8,9 +8,9 @@ map.lighting.bounce=false;map.blockLighting={quality:2};map.camera.mode='fly';ma
 for(let i=0;i<8;i++)map.objects.push(W.newObject('light',6+i*2,12,'light'+i));
 const opts={map,mode:'mj',selection:null,images:new Map(),lights:W.buildLights(map),vision:new Set(),explored:new Set(),terrainEpoch:1,path:[]};
 r.render(opts);
-let active=r.debug().pointLights.filter(l=>l.intensity>0);assert.equal(active.length,4);assert(active.every(l=>l.castShadow&&l.shadow.mapSize.x===256&&!l.shadow.autoUpdate));
+let active=r.debug().pointLights.filter(l=>l.intensity>0);assert.equal(active.length,4);assert.equal(r.debug().pointLights.filter(l=>l.visible).length,4,'unused lights must not be submitted to the shader');assert(active.every(l=>l.castShadow&&l.shadow.mapSize.x===256&&!l.shadow.autoUpdate));
 for(const l of active)l.shadow.needsUpdate=false;gpu.shadowMap.needsUpdate=false;
 map.camera.angle+=.1;r.render(opts);assert(active.every(l=>!l.shadow.needsUpdate));assert(!gpu.shadowMap.needsUpdate);
-map.blockLighting.quality=1;r.render(opts);assert.equal(r.debug().pointLights.filter(l=>l.intensity>0).length,2);
+map.blockLighting.quality=1;r.render(opts);assert.equal(r.debug().pointLights.filter(l=>l.intensity>0).length,2);assert.equal(r.debug().pointLights.filter(l=>l.visible).length,2);
 map.lighting.shadows=false;r.render(opts);assert.equal(r.debug().pointLights.filter(l=>l.intensity>0).length,8);assert(r.debug().pointLights.every(l=>!l.castShadow));
 r.dispose();console.log('PASS: bounded local lights, all active lamps shadowed, independent static shadow cache.');
