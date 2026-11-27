@@ -32,17 +32,23 @@ export function aimedDoor(map,actor,ray,W){
   for(const b of doorSlabs(map,o,W)){
    if(distance(eye,nearestPoint(eye,b))>DOOR_REACH+.001)continue;
    const t=doorRayDistance(ray.origin,ray.direction,b);if(!Number.isFinite(t)||nearest&&nearest.distance<=t)continue;
-   nearest={door:o,distance:t};
+   const point={x:ray.origin.x+ray.direction.x*t,y:ray.origin.y+ray.direction.y*t,z:ray.origin.z+ray.direction.z*t};
+   if(distance(eye,point)>DOOR_REACH+.001)continue;
+   nearest={door:o,distance:t,point};
   }
  }
  return nearest;
 }
-export function doorAccess(map,o,actor,W){
+export function doorAccess(map,o,actor,W,aimedPoint=null){
  if(!actor||actor.locked||!map.objects.includes(o)||!visibleDoor(map,o,actor,W))return 'Porte inaccessible.';
  const eye=eyePoint(map,actor,W),walls=W.obstacles(map,'blocksSight',W.levelOf(actor)).filter(w=>w.id!==o.id);
  let inRange=false;
- for(const b of doorSlabs(map,o,W)){
-  const p=nearestPoint(eye,b),d=distance(eye,p);if(d>DOOR_REACH+.001)continue;inRange=true;
+ // When the player aims, validate that exact spot, not a different,
+ // reachable part of the door that happens to be on this side of a wall.
+ const points=aimedPoint?[aimedPoint]:doorSlabs(map,o,W).map(b=>nearestPoint(eye,b));
+ for(const p of points){
+  if(![p.x,p.y,p.z].every(Number.isFinite))continue;
+  const d=distance(eye,p);if(d>DOOR_REACH+.001)continue;inRange=true;
   // Stop just outside the target surface to avoid testing the solid itself.
   const n=Math.min(.025,d/2)/Math.max(d,1e-8),target={x:p.x+(eye.x-p.x)*n,y:p.y+(eye.y-p.y)*n,z:p.z+(eye.z-p.z)*n};
   if(W.terrainLineClear(map,eye,target,eye.z,target.z)&&!W.sightHit(map,eye,target,walls,actor.id,eye.z,target.z))return '';
