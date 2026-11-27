@@ -11,7 +11,7 @@ export function walkPlayer(map,actor,angle,forward,side,dt,speed=3.5,state=creat
  if(!actor||actor.locked||map.groups?.find(g=>g.id===actor.group)?.locked||map.combat?.active)return false;
  if(state.id!==actor.id){Object.assign(state,createPlayerMotion(),{id:actor.id})}
  dt=Math.min(.05,Math.max(0,dt));const p=W.center(actor),base=actor.voxelZ??W.terrainSurface(actor,map),height=actor.bodyHeight||actor.height||1.8,r=Math.min(.45,Math.max(.23,(actor.w||1)*.28));
- const boxes=boxesNear(map,{x:p.x,y:base,z:p.y},Math.max(2,r+1),actor.id,null,true);for(const b of boxes){b.c=Math.cos(b.angle||0);b.s=Math.sin(b.angle||0)}
+ const boxes=boxesNear(map,{x:p.x,y:base,z:p.y},Math.max(2,r+1),actor.id,null,true);
  let x=p.x,y=p.y,z=base;
  // Horizontal margin only; vertical body span is checked explicitly.
  const free=(x,y,z,h)=>W.activeCell(map,x-r,y-r)&&W.activeCell(map,x+r,y+r)&&W.activeCell(map,x-r,y+r)&&W.activeCell(map,x+r,y-r)&&!boxes.some(b=>{if(z+h<=b.y+.001||z>=b.y+b.h-.001)return false;const c=b.c,s=b.s,u=(x-b.x)*c+(y-b.z)*s,v=-(x-b.x)*s+(y-b.z)*c;return Math.abs(u)<b.w/2+r-.001&&Math.abs(v)<b.d/2+r-.001});

@@ -3,7 +3,7 @@ import * as W from './world.mjs';
 // Preserve synchronous batch callers, but yield between individual rays in UI.
 function visionDomain(map,actor){
  const p=W.center(actor),range=actor.vision?.range||12,r=Math.max(actor.vision?.near??3.5,Math.max(range,Math.min(96,actor.vision?.far??64)))+1;
- const cx=Math.floor(p.x),cy=Math.floor(p.y),limit=Math.ceil(r)+1;
+ const cx=Math.floor(p.x),cy=Math.floor(p.y),limit=Math.min(Math.ceil(r)+1,Math.max(Math.abs(cx),Math.abs(cy),Math.abs(map.width-1-cx),Math.abs(map.height-1-cy)));
  const cone=(actor.vision?.angle??180)*Math.PI/360,near=(actor.vision?.near??3.5)+.65,heading=actor.facing||0;
  function valid(x,y){if(x<0||y<0||x>=map.width||y>=map.height)return false;const dx=x+.5-p.x,dy=y+.5-p.y,d=Math.hypot(dx,dy);return d<=r&&(d<=near||cone>=Math.PI-.001||Math.abs(W.mod(W.bearing(dx,dy)-heading+Math.PI,W.TAU)-Math.PI)<cone)}
  return {cx,cy,limit,valid};
@@ -38,10 +38,10 @@ export function createPartyVisionCache(perceive=W.perception,now=()=>performance
      const comma=k.indexOf(','),x=Number(k.slice(0,comma)),y=Number(k.slice(comma+1));
      if(!valid(x,y)||fog.has(k))display.delete(k);
     }
-    entries.set(a.id,{key,actor:snapshot,tiles:new Map(),display,scan:visionCells(map,snapshot),done:false});aggregate=null;
+    entries.set(a.id,{key,actor:snapshot,tiles:new Map(),sight:new Map(),allowed:new Set(),vision:new Set(),display,scan:visionCells(map,snapshot),done:false});aggregate=null;
    }
   }
-  let rays=0,recomputed=0,pending=false;
+  let rays=0,recomputed=0,pending=false;const newlyExplored=new Map();
   const ordered=observers.map((_,i)=>observers[(i+cursor)%observers.length]);
   // Round-robin slices keep group vision responsive too.
   while(ordered.some(a=>!entries.get(a.id).done)){
@@ -51,6 +51,10 @@ export function createPartyVisionCache(perceive=W.perception,now=()=>performance
     const next=entry.scan.next();if(next.done){entry.done=true;recomputed++;continue}
     const [x,y]=next.value,k=W.cellKey(x,y),v=perceive(map,entry.actor,x,y,lights);
     entry.tiles.set(k,v);
+    if(v.allowed)entry.allowed.add(k);
+    if(v.detail>0||v.haze>0)entry.sight.set(k,{detail:Math.max(0,v.detail),haze:Math.max(0,v.haze)});
+    if(v.detail>.25||v.haze>.1)entry.vision.add(k);
+    if(v.detail>.6){let keys=newlyExplored.get(a.id);if(!keys){keys=[];newlyExplored.set(a.id,keys)}keys.push(k)}
     // Fresh results replace memory, including negative/occluded rays.
     const brightness=Math.max(v.detail||0,v.haze||0);
     if(v.allowed&&brightness>0)entry.display.set(k,brightness);else entry.display.delete(k);
@@ -60,6 +64,12 @@ export function createPartyVisionCache(perceive=W.perception,now=()=>performance
    if(stopped)break;
   }
   pending=[...entries.values()].some(e=>!e.done);
+  if(!aggregate&&observers.length===1){
+   // Each ray already updated these sets. Do not merge the same thousands of
+   // cells on every 96-ray slice for the usual single-player view.
+   const a=observers[0],entry=entries.get(a.id);
+   aggregate={sight:entry.sight,allowed:entry.allowed,vision:entry.vision,individual:new Map([[a.id,entry.tiles]]),display:entry.display};
+  }
   if(!aggregate){
    const sight=new Map(),allowed=new Set(),vision=new Set(),individual=new Map();
    for(const a of observers){const tiles=entries.get(a.id).tiles;individual.set(a.id,tiles);
@@ -69,6 +79,6 @@ export function createPartyVisionCache(perceive=W.perception,now=()=>performance
    if(observers.length>1)for(const a of observers)for(const [k,v]of entries.get(a.id).display)if(v>(display.get(k)||0))display.set(k,v);
    aggregate={sight,allowed,vision,individual,display};
   }
-  return{...aggregate,recomputed,pending,rays,ms:now()-start};
+  return{...aggregate,newlyExplored,recomputed,pending,rays,ms:now()-start};
  }};
 }

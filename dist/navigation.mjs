@@ -6,7 +6,11 @@ const EPS=1e-6;
 // Box coordinates: x/z centre, y base, w/d horizontal sizes, h height.
 export function cameraBoxEntry(a,b,box,radius=0){
  if(Math.max(a.y,b.y)<=box.y-radius+EPS||Math.min(a.y,b.y)>=box.y+box.h+radius-EPS)return Infinity;
- const c=Math.cos(box.angle||0),s=Math.sin(box.angle||0);
+ // Reject distant boxes before allocating local-space arrays. The rotated
+ // bound is deliberately conservative, including the expanded safety radius.
+ const angle=box.angle||0,ex=angle?(box.w+box.d)/2+2*radius:box.w/2+radius,ez=angle?ex:box.d/2+radius;
+ if(Math.max(a.x,b.x)<box.x-ex-EPS||Math.min(a.x,b.x)>box.x+ex+EPS||Math.max(a.z,b.z)<box.z-ez-EPS||Math.min(a.z,b.z)>box.z+ez+EPS)return Infinity;
+ const c=box.c??Math.cos(angle),s=box.s??Math.sin(angle);
  const local=p=>[(p.x-box.x)*c+(p.z-box.z)*s,p.y-box.y,-(p.x-box.x)*s+(p.z-box.z)*c];
  const p=local(a),q=local(b),lo=[-box.w/2-radius,-radius,-box.d/2-radius],hi=[box.w/2+radius,box.h+radius,box.d/2+radius];
  let enter=0,exit=1;
@@ -35,14 +39,37 @@ function clipFraction(a,b,boxes,r){
  }
  return Math.max(0,t===1?1:t-.025/length);
 }
-export function boxesNear(map,origin,range,ignore,liquids=null,player=false){
- const boxes=[],x0=origin.x-range,x1=origin.x+range,z0=origin.z-range,z1=origin.z+range;
- const add=(x,y,z,w,h,d,angle=0)=>{if([x,y,z,w,h,d,angle].every(Number.isFinite)&&w>0&&h>0&&d>0)boxes.push({x,y,z,w,h,d,angle})};
- for(let z=Math.max(0,Math.floor(z0));z<Math.min(map.height,Math.ceil(z1));z++)for(let x=Math.max(0,Math.floor(x0));x<Math.min(map.width,Math.ceil(x1));x++){
-  if(!W.activeCell(map,x,z))continue;
-  const ground=map.blocks?W.groundAt(map,x,z):W.terrainHeight(map,x,z);add(x+.5,-200,z+.5,1,ground+200,1);
-  for(const [base,kind] of Object.entries(map.blocks?.[x+','+z]||{}))if(W.BLOCKS[kind]?.solid||kind==='lava')add(x+.5,+base,z+.5,1,W.blockSize(map,x,z,+base),1);
+// Reuse exact integer terrain windows while the camera or player moves inside
+// them. Dynamic objects and derived lava remain live; only voxel boxes cache.
+const terrainWindows=new WeakMap();
+function appendBox(boxes,x,y,z,w,h,d,angle=0){
+ if([x,y,z,w,h,d,angle].every(Number.isFinite)&&w>0&&h>0&&d>0)boxes.push({x,y,z,w,h,d,angle,c:Math.cos(angle),s:Math.sin(angle)});
+}
+function terrainBoxes(map,x0,x1,z0,z1){
+ const left=Math.max(0,Math.floor(x0)),right=Math.min(map.width,Math.ceil(x1)),top=Math.max(0,Math.floor(z0)),bottom=Math.min(map.height,Math.ceil(z1));
+ const key=[left,right,top,bottom].join(',');
+ let entry=terrainWindows.get(map);
+ const cacheable=!!map.blocks&&Number.isFinite(map.blockRevision);
+ if(cacheable&&(!entry||entry.blocks!==map.blocks||entry.ground!==map.ground||entry.heights!==map.blockHeights||entry.chunks!==map.chunks||entry.chunkCount!==map.chunks.length||entry.revision!==map.blockRevision||entry.build!==map.buildRevision||entry.width!==map.width||entry.height!==map.height)){
+  entry={blocks:map.blocks,ground:map.ground,heights:map.blockHeights,chunks:map.chunks,chunkCount:map.chunks.length,revision:map.blockRevision,build:map.buildRevision,width:map.width,height:map.height,windows:new Map()};
+  terrainWindows.set(map,entry);
  }
+ if(cacheable&&entry.windows.has(key)){const boxes=entry.windows.get(key);entry.windows.delete(key);entry.windows.set(key,boxes);return boxes}
+ const boxes=[];
+ for(let z=top;z<bottom;z++)for(let x=left;x<right;x++){
+  if(!W.activeCell(map,x,z))continue;
+  const ground=map.blocks?W.groundAt(map,x,z):W.terrainHeight(map,x,z);
+  appendBox(boxes,x+.5,-200,z+.5,1,ground+200,1);
+  for(const [base,kind] of Object.entries(map.blocks?.[x+','+z]||{}))if(W.BLOCKS[kind]?.solid||kind==='lava')appendBox(boxes,x+.5,+base,z+.5,1,W.blockSize(map,x,z,+base),1);
+ }
+ // Small LRU: the cache cannot grow with the number of explored sectors.
+ if(cacheable&&boxes.length<=8192){entry.windows.set(key,boxes);if(entry.windows.size>4)entry.windows.delete(entry.windows.keys().next().value)}
+ return boxes;
+}
+export function boxesNear(map,origin,range,ignore,liquids=null,player=false){
+ const x0=origin.x-range,x1=origin.x+range,z0=origin.z-range,z1=origin.z+range;
+ const boxes=terrainBoxes(map,x0,x1,z0,z1).slice();
+ const add=(...args)=>appendBox(boxes,...args);
  const groups=new Map((map.groups||[]).map(g=>[g.id,g.visible!==false]));
  for(const o of map.objects||[]){
   if(o.id===ignore||!player&&(o.visible===false||groups.get(o.group)===false||W.character(o))||W.isDoor(o)&&o.open)continue;

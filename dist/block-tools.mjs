@@ -33,4 +33,28 @@ export function applyBlockPlan(map,plan,canPlace=()=>true){
  return changed;
 }
 export function cutawayPoint(point,origin,direction,radius=1.1){if(point.y<=origin.y-.78)return false;let x=point.x-origin.x,y=point.y-origin.y,z=point.z-origin.z,t=x*direction.x+y*direction.y+z*direction.z;if(t<0)return false;return (x-direction.x*t)**2+(y-direction.y*t)**2+(z-direction.z*t)**2<radius*radius}
-export function blockLightSources(map){if(map.blockLighting?.enabled===false||map.blockLighting?.power===0)return[];let sources=[],power=map.blockLighting?.power??1,radius=map.blockLighting?.radius??5;for(let[k,column]of Object.entries(map.blocks||{})){let[x,y]=k.split(',').map(Number);for(let[z,kind]of Object.entries(column)){if(!BLOCKS[kind]?.emissive)continue;z=+z;let height=blockSize(map,x,y,z),faces=[[0,0,1],[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,-1]].filter(([dx,dy,dz])=>!BLOCKS[blockAt(map,x+dx,y+dy,dz>0?z+height+.001:dz<0?z-.001:z+height/2)]?.opaque);if(!faces.length)continue;let[dx,dy,dz]=faces[0];sources.push({x:x+.5+dx*.56,y:y+.5+dy*.56,z:z+height/2+dz*(height/2+.06),power,radius,color:BLOCKS[kind].accent||BLOCKS[kind].top,block:true,owner:null,secondary:false})}}let actors=map.objects.filter(o=>['hero','npc','enemy'].includes(o.type));const score=s=>Math.min(...(actors.length?actors:[{x:map.width/2,y:map.height/2}]).map(a=>(a.x-s.x)**2+(a.y-s.y)**2));return sources.map(source=>({source,score:score(source)})).sort((a,b)=>a.score-b.score).slice(0,128).map(entry=>entry.source)}
+// The exposed faces depend on voxel edits, not on the moving viewer. Keep
+// emitter extraction separate from the existing nearest-128 selection.
+const emitterCache=new WeakMap(),lightFaces=[[0,0,1],[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,-1]];
+export function blockLightSources(map){
+ if(map.blockLighting?.enabled===false||map.blockLighting?.power===0)return[];
+ const power=map.blockLighting?.power??1,radius=map.blockLighting?.radius??5;
+ let e=emitterCache.get(map);
+ if(!e||e.blocks!==map.blocks||e.heights!==map.blockHeights||e.revision!==map.blockRevision||e.build!==map.buildRevision||e.power!==power||e.radius!==radius||!Number.isFinite(map.blockRevision)){
+  const sources=[];
+  for(let[k,column]of Object.entries(map.blocks||{})){
+   const [x,y]=k.split(',').map(Number);
+   for(let[z,kind]of Object.entries(column)){
+    if(!BLOCKS[kind]?.emissive)continue;z=+z;const height=blockSize(map,x,y,z);
+    const face=lightFaces.find(([dx,dy,dz])=>!BLOCKS[blockAt(map,x+dx,y+dy,dz>0?z+height+.001:dz<0?z-.001:z+height/2)]?.opaque);
+    if(!face)continue;const [dx,dy,dz]=face;
+    sources.push({x:x+.5+dx*.56,y:y+.5+dy*.56,z:z+height/2+dz*(height/2+.06),power,radius,color:BLOCKS[kind].accent||BLOCKS[kind].top,block:true,owner:null,secondary:false});
+   }
+  }
+  e={blocks:map.blocks,heights:map.blockHeights,revision:map.blockRevision,build:map.buildRevision,power,radius,sources};emitterCache.set(map,e);
+ }
+ // With <=128 emitters the original ordering by distance is still preserved.
+ const actors=map.objects.filter(o=>['hero','npc','enemy'].includes(o.type)),targets=actors.length?actors:[{x:map.width/2,y:map.height/2}];
+ const score=s=>{let nearest=Infinity;for(const a of targets){const d=(a.x-s.x)**2+(a.y-s.y)**2;if(d<nearest)nearest=d}return nearest};
+ return e.sources.map(source=>({source,score:score(source)})).sort((a,b)=>a.score-b.score).slice(0,128).map(entry=>entry.source);
+}
