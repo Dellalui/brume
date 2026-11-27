@@ -4,7 +4,7 @@ export const angleFrame=(angle,count)=>Math.round(wrapAngle(angle)/360*count)%co
 // One small, reusable WebGL surface. Render only when the user changes the preview.
 export function createAppearanceViewer(doc=document){
  const canvas=doc.createElement('canvas');canvas.className='portrait-canvas';canvas.setAttribute('aria-hidden','true');
- let gpu;try{gpu=new T.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power'});gpu.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,1.5));gpu.setSize(280,260,false)}catch{}
+ let gpu;try{gpu=new T.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power',preserveDrawingBuffer:true});gpu.setPixelRatio(Math.min(globalThis.devicePixelRatio||1,1.5));gpu.setSize(280,260,false)}catch{}
  const scene=new T.Scene(),camera=new T.PerspectiveCamera(34,280/260,.1,30),person=new T.Group();scene.add(person);scene.add(new T.HemisphereLight(0xeaf5eb,0x293f34,2));let light=new T.DirectionalLight(0xffffff,2);light.position.set(2,4,3);scene.add(light);
  const material=new T.MeshStandardMaterial({color:0x96b8a8,roughness:.85}),dark=new T.MeshStandardMaterial({color:0x304f43,roughness:.9});
  function part(g,x,y,z,mat=material){let m=new T.Mesh(g,mat);m.position.set(x,y,z);person.add(m);return m}

@@ -13,7 +13,7 @@ export function searchCommands(entries,query,limit=80){
 export function syncDockState(doc){
  const panels=[...doc.querySelectorAll('.panel:not(.legacy-build-data)')],open=panels.filter(p=>!p.hidden);
  setData(doc.body,'dockLeft',open.some(p=>p.id!=='inspectorPanel'));
- setData(doc.body,'dockRight',open.some(p=>p.id==='inspectorPanel'));
+ setData(doc.body,'dockRight',!doc.body.classList.contains('canvas-inspector')&&open.some(p=>p.id==='inspectorPanel'));
 }
 const SCENE_TABS=[['lighting','Lumière'],['sky','Ciel astral'],['weather','Météo'],['graphics','Graphismes']];
 export function organizeSceneSettings(doc){
