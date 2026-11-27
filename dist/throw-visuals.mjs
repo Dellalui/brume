@@ -17,7 +17,7 @@ function makeTexture(kind){
   let red=255,green=255,blue=255,alpha=0;
   if(kind==='fire'){
    const heat=clamp(1-r*.8+(f-.5)*.68),edge=r+(f-.5)*.46;
-   red=255;green=60+195*smooth(.15,.88,heat);blue=8+232*smooth(.52,1,heat);
+   red=255;green=48+170*smooth(.15,.95,heat);blue=6+138*smooth(.68,1,heat);
    alpha=(1-smooth(.53,1,edge))*(.7+.3*f);
   }else if(kind==='smoke'){
    const edge=r+(f-.5)*.48,g=90+165*smooth(.12,.92,f);red=green=blue=g;
@@ -122,15 +122,15 @@ export function createThrowVisuals(factory){
    e.core.visible=e.halo.visible=e.trail.visible=false;
    e.body.update(a,r);if(e.lens||kind==='shockwave')e.body.group.visible=false;
    if(!e.fxStarted){e.fxStarted=true;if(a<.18&&!e.lens&&kind!=='shockwave'&&e.quality!=='minimal'){e.fx=factory.burst({kind:'blast_'+kind,color:p.config.color,size:r*.8,speed:3/life,density:1,quality:e.quality,shape:p.config.shape});e.root.add(e.fx.group)}}
-   e.flash.visible=!e.lens&&kind!=='dust'&&kind!=='shockwave'&&a<.42;e.flash.material.opacity=(1-smooth(0,.42,a))*.95;billboard(e.flash,r*(1.05+2.4*smooth(0,.15,a)));
-   e.wave.visible=!e.lens&&a<.8;e.wave.material.opacity=(1-smooth(.06,.8,a))*.94;e.wave.scale.setScalar(r*(kind==='void'?3-2.7*smooth(0,.7,a):.3+2.7*smooth(0,.7,a)));e.wave.position.y=.055;
-   e.wave2.visible=!e.lens&&kind!=='dust'&&a<.48;e.wave2.material.opacity=(1-smooth(0,.48,a))*.42;billboard(e.wave2,r*(.2+2.3*smooth(0,.44,a)));
+   e.flash.visible=!e.lens&&kind!=='dust'&&kind!=='shockwave'&&a<.42;e.flash.material.opacity=(1-smooth(0,.25,a))*.42;billboard(e.flash,r*(.65+1.1*smooth(0,.15,a)));
+   e.wave.visible=!e.lens&&a<.8;e.wave.material.opacity=(1-smooth(.06,.8,a))*.55;e.wave.scale.setScalar(r*(kind==='void'?3-2.7*smooth(0,.7,a):.3+2.7*smooth(0,.7,a)));e.wave.position.y=.055;
+   e.wave2.visible=!e.lens&&kind!=='dust'&&a<.48;e.wave2.material.opacity=(1-smooth(0,.48,a))*.16;billboard(e.wave2,r*(.2+2.3*smooth(0,.44,a)));
    if(!e.lens&&kind!=='shockwave'){billows(e.fire,e.fireSeeds,e.fireOrder,a,r,'fire',kind);billows(e.smoke,e.smokeSeeds,e.smokeOrder,a,r,'smoke',kind);fragments(e,a,r,kind)}else{e.smoke.visible=e.shards.visible=false;if(e.fire)e.fire.visible=false}
    for(let i=0;i<e.runes.length;i++){const rune=e.runes[i];rune.visible=a<1.55;rune.material.opacity=.9*(1-smooth(.65,1.55,a));rune.scale.setScalar(r*(.25+smooth(0,.5,a)*(i?.8:1.05)));rune.rotation.set(i?Math.PI/2:0,a*(i?-1.8:1.2),i?a*.7:0);rune.position.y=.06+i*r*.35}
    if(e.pillar){e.pillar.visible=a<1.05;e.pillar.material.opacity=.85*(1-smooth(.18,1.05,a));billboard(e.pillar,r*.8);e.pillar.scale.y=r*(.8+2.8*smooth(0,.35,a));e.pillar.position.y=r*.95}
    if(e.bolt){if(a<.38)e.bolt.update(a,1-smooth(.15,.38,a));else e.bolt.group.visible=false}
-   for(const material of e.materials){material.opacity*=Math.min(1,strength);if(material.color){material.userData.baseColor??=material.color.clone();material.color.copy(material.userData.baseColor).multiplyScalar(Math.max(1,strength))}}
-   e.body.group.traverse(o=>{if(o.material?.uniforms?.fade){o.material.uniforms.fade.value*=Math.min(1,strength);for(const key of ['hotColor','highlightColor']){const u=o.material.uniforms[key];if(u){o.material.userData[key]??=u.value.clone();u.value.copy(o.material.userData[key]).multiplyScalar(Math.max(1,strength))}}}});
+   for(const material of e.materials){material.opacity*=Math.min(1,strength);if(material.color){material.userData.baseColor??=material.color.clone();material.color.copy(material.userData.baseColor).multiplyScalar(Math.min(1.2,Math.max(1,strength)))}}
+   e.body.group.traverse(o=>{if(o.material?.uniforms?.fade){o.material.uniforms.fade.value*=Math.min(1,strength);for(const key of ['hotColor','highlightColor']){const u=o.material.uniforms[key];if(u){o.material.userData[key]??=u.value.clone();u.value.copy(o.material.userData[key]).multiplyScalar(Math.min(1.2,Math.max(1,strength)))}}}});
    if(e.fx){if(a<1.8)e.fx.update(time,camera,(1-smooth(1.45,1.8,a))*Math.min(1,strength));else{e.root.remove(e.fx.group);e.fx.dispose();e.fx=null}}
   }
   for(const [id,e]of entries)if(!active.has(id))remove(id,e);
