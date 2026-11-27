@@ -92,7 +92,7 @@ export function applyImpact(map,plan,W,changes=null){
  const protectedGround=plan.ground?.length?groundProtection(map,locks):null;
  for(const b of (plan.ground||[]).slice().sort((a,b)=>b.z-a.z)){
   if(protectedGround(b.x,b.y)||W.groundAt(map,b.x,b.y)!==b.z)continue;
-  if(W.digGround(map,b.x,b.y,.5)){if(changes)changes.ground++;count++}
+  if(W.digGround(map,b.x,b.y,.5)){if(changes){changes.ground++;changes.groundColumns?.push(b.x+','+b.y)}count++}
  }
  const ids=new Set(plan.objects.map(o=>o.id));
  if(ids.size){const before=map.objects.length;map.objects=map.objects.filter(o=>{const keep=!ids.has(o.id)||o.type!=='block'||o.locked||o.protected||locks.has(o.group);if(!keep)changes?.objects.push(o.id);return keep});count+=before-map.objects.length}
@@ -101,7 +101,7 @@ export function applyImpact(map,plan,W,changes=null){
 // Preserve impact order and the per-impact removal/protection rules while
 // letting the editor commit one transaction for simultaneous hits.
 export function applyImpactBatch(map,impacts,W,beforeChange=()=>{}){
- let changed=false,count=0,protectedCount=0,resistedCount=0,limited=0,destructive=0;const changes={voxels:[],objects:[],ground:0};
+ let changed=false,count=0,protectedCount=0,resistedCount=0,limited=0,destructive=0;const changes={voxels:[],objects:[],ground:0,groundColumns:[]};
  for(const {point,item} of impacts){
   if(item.destroy===false)continue;
   destructive++;const plan=planImpact(map,point,item,W);

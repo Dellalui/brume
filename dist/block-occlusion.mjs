@@ -98,8 +98,8 @@ export function createChunkOcclusionCache(){
   if(matches(state,map,slice,mode,epoch))return state;
   const index=prepareBlockOcclusion(map,{slice,mode}),groups=new Map(),voxelSectors=new Set(),voxelById=new Map(),placedById=new Map(),placedSpatial=new Map(),voxelDependents=new Map(),placedDependents=new Map();
   for(const box of index.boxes){
-   let g=groups.get(box.sector);if(!g)groups.set(box.sector,g={boxes:[],min:[Infinity,Infinity],max:[-Infinity,-Infinity],variants:new Map()});
-   g.boxes.push(box);for(let a=0;a<2;a++){g.min[a]=Math.min(g.min[a],box.min[a]);g.max[a]=Math.max(g.max[a],box.max[a])}
+   let g=groups.get(box.sector);if(!g)groups.set(box.sector,g={boxes:[],min:[Infinity,Infinity],max:[-Infinity,-Infinity],variants:new Map(),renderSectors:new Set()});
+   g.boxes.push(box);g.renderSectors.add(sector((box.min[0]+box.max[0])/2,(box.min[1]+box.max[1])/2));for(let a=0;a<2;a++){g.min[a]=Math.min(g.min[a],box.min[a]);g.max[a]=Math.max(g.max[a],box.max[a])}
    if(box.voxel){voxelSectors.add(box.sector);voxelById.set(box.id,box)}
    else{placedById.set(box.id,box);forSectors(box.min[0]-EPS,box.min[1]-EPS,box.max[0]+EPS,box.max[1]+EPS,k=>append(placedSpatial,k,box))}
   }
@@ -149,7 +149,7 @@ export function createChunkOcclusionCache(){
   const s=state;if(!s?.fixedElevation||!matches(s,map,s.slice,s.mode,epoch))return null;
   return {state:s,map,epoch,context:context(map),blockRevision:map.blockRevision||0,buildRevision:map.buildRevision||0,objectCount:map.objects.length};
  }
- function finishRemoval(map,epoch,token,changes){
+ function finishRemoval(map,epoch,token,changes,onDirty){
   if(!token||token.state!==state||token.map!==map||!changes)return false;
   const s=state;
   if(map.chunks!==s.chunks||map.blocks!==s.blocks||context(map)!==token.context||
@@ -175,7 +175,7 @@ export function createChunkOcclusionCache(){
   // Dependency bounds are conservative supersets after a deletion. Keeping
   // them avoids rebuilding the entire spatial graph and remains exact.
   s.objects=map.objects;s.revision=revisionOf(map,s.slice,s.mode,epoch);
-  removalUpdates++;invalidatedChunks+=dirty.size;return true;
+  removalUpdates++;invalidatedChunks+=dirty.size;if(onDirty){const sectors=new Set();for(const g of dirty)for(const id of g.renderSectors)sectors.add(id);onDirty(sectors)}return true;
  }
  return {collect,beginRemoval,finishRemoval,stats:()=>({occlusionIndexBuilds:indexBuilds,occlusionChunkBuilds:chunkBuilds,occlusionChunkHits:chunkHits,occlusionRemovalUpdates:removalUpdates,occlusionRemovedBoxes:removedBoxes,occlusionInvalidatedChunks:invalidatedChunks}),reset(){state=null}};
 }
