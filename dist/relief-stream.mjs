@@ -39,6 +39,6 @@ export function createReliefStream(){
   if(liquids){let i=0;for(const b of liquids.cells){if(includeLiquid(b))liquidIds.push(i);i++}for(const b of liquids.irregular||[]){if(includeLiquid(b))liquidIds.push(i);i++}}
   const occlusionKey=JSON.stringify([sectorIds,objects.map(o=>o.id)]);
   const reliefKey=JSON.stringify([visibleColumns.length===columns.length?'all':visibleColumns.map(e=>e[0]),visibleObjects.map(o=>o.id),earth.map(e=>e[0]),liquidIds]);
-  return scope={region,windowKey,liquids,columns,objects,visibleColumns,visibleObjects,earth,includeLiquid,occlusionKey,reliefKey};
+  return scope={region,windowKey,liquids,columns,objects,visibleColumns,visibleObjects,earth,includeLiquid,liquidKey:JSON.stringify(liquidIds),occlusionKey,reliefKey};
  };
 }

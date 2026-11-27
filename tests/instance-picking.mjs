@@ -6,7 +6,11 @@ const bounds=[];
 for(let x=0;x<64;x++)for(let z=0;z<64;z++){
  const i=x*64+z;matrix.makeTranslation(x+.5,.5,z+.5);original.setMatrixAt(i,matrix);fast.setMatrixAt(i,matrix);bounds.push({min:[x,0,z],max:[x+1,1,z+1]});
 }
-accelerateInstancePicking(fast);
+fast.computeBoundingSphere();accelerateInstancePicking(fast);
+let matrixReads=0;const getMatrixAt=fast.getMatrixAt;fast.getMatrixAt=function(...args){matrixReads++;return getMatrixAt.apply(this,args)};
+const miss=new T.Raycaster(new T.Vector3(32.5,100,32.5),new T.Vector3(0,1,0));
+assert.equal(miss.intersectObject(fast,false).length,0);assert.equal(matrixReads,0,'cold offscreen ray does not build instance index');
+miss.set(new T.Vector3(32.5,100,32.5),new T.Vector3(0,-1,0));miss.far=1;assert.equal(miss.intersectObject(fast,false).length,0);assert.equal(matrixReads,0,'short ray rejects distant mesh before indexing');
 assert.deepEqual(rayCandidates(buildRayBuckets(bounds),bounds,[32.5,8,32.5],[0,-1,0]),[32*64+32]);
 const ray=new T.Raycaster(),key=h=>[h.instanceId,Math.round(h.distance*1e6),...h.face.normal.toArray()];
 function compare(o,d){

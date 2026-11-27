@@ -30,7 +30,7 @@ export function rayCandidates(bins,bounds,origin,direction){
 }
 // Preserve exact per-triangle raycasting, normal and instance ID.
 export function accelerateInstancePicking(mesh,threshold=48){
- const original=mesh.raycast,instance=new T.Matrix4(),inverse=new T.Matrix4(),box=new T.Box3(),localRay=new T.Ray(),proxy=new T.Mesh(),hits=[];
+ const original=mesh.raycast,instance=new T.Matrix4(),inverse=new T.Matrix4(),box=new T.Box3(),localRay=new T.Ray(),sphere=new T.Sphere(),proxy=new T.Mesh(),hits=[];
  let index=null;
  function rebuild(){
   if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox();
@@ -40,6 +40,12 @@ export function accelerateInstancePicking(mesh,threshold=48){
  }
  mesh.raycast=function(raycaster,intersections){
   if(mesh.count<threshold||!mesh.material||mesh.morphTexture)return original.call(mesh,raycaster,intersections);
+  // Match Three's enclosing-sphere broad phase BEFORE constructing a cold
+  // per-instance index. Looking at the sky or away from a chunk must not
+  // walk thousands of instance transforms just to reject the ray.
+  if(mesh.boundingSphere===null)mesh.computeBoundingSphere();
+  sphere.copy(mesh.boundingSphere).applyMatrix4(mesh.matrixWorld);
+  if(!raycaster.ray.intersectsSphere(sphere)||raycaster.ray.origin.distanceTo(sphere.center)-sphere.radius>raycaster.far)return;
   if(!index||index.geometry!==mesh.geometry||index.version!==mesh.instanceMatrix.version||index.count!==mesh.count)rebuild();
   inverse.copy(mesh.matrixWorld).invert();localRay.copy(raycaster.ray).applyMatrix4(inverse);
   const candidates=rayCandidates(index.bins,index.bounds,localRay.origin.toArray(),localRay.direction.toArray());
