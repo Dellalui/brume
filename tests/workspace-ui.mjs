@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {parseHTML} from 'linkedom';
+import {HUD_CATEGORIES,hitTest,hudLayout} from '../dist/canvas-hud.mjs';
 import {searchCommands,normalizeSearch,organizeSceneSettings,syncDockState,createBookmarkStore,cameraSnapshot,applyGraphicsProfile} from '../dist/workspace-ui.mjs';
 const html=fs.readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
 const {document}=parseHTML(html);
 const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);assert.equal(new Set(ids).size,ids.length);
-for(const id of ['map','viewport','playMode','buildMode','sceneMapSelect','mapName','hotbar','creativeInventory','inspector','lightPanel','commandDialog','commandSearch','commandResults','bookmarksPanel','performanceHud'])assert(document.getElementById(id),id);
+for(const id of ['map','viewport','playMode','buildMode','sceneMapSelect','mapName','creativeForms','creativeSettings','zoneTools','inspector','lightPanel','commandDialog','commandSearch','commandResults','bookmarksPanel','performanceHud'])assert(document.getElementById(id),id);
+for(const id of ['hotbar','creativeInventory','inventoryItems','inventoryTabs','creativeHud','selectionBar','contextMenu'])assert.equal(document.getElementById(id),null,'no legacy DOM menu: '+id);
+assert.equal(HUD_CATEGORIES.length,10);
+for(const [w,h] of [[1280,900],[600,500],[320,420]]){
+ const l=hudLayout(w,h);assert(l.panel.x>=0&&l.panel.x+l.panel.w<=w);assert(l.barX>=0&&l.barX+l.barW<=w);assert(l.barY+l.slot<=h);
+}
+const regions=[{id:'panel',x:0,y:0,w:100,h:100},{id:'item',x:10,y:10,w:30,h:30}];
+assert.equal(hitTest(regions,20,20).id,'item');assert.equal(hitTest(regions,40,20).id,'panel');assert.equal(hitTest(regions,101,20),null);
 const light=document.querySelector('#lightPanel .panelbody'),env=document.createElement('section');env.id='environmentSettings';
 const source=fs.readFileSync(new URL('../dist/environment-ui.mjs',import.meta.url),'utf8');
 const template=source.match(/root\.innerHTML=\x60([\s\S]+?)\x60;body\.prepend\(root\)/)[1];env.innerHTML=template;light.prepend(env);

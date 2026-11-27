@@ -129,7 +129,7 @@ export function mountWorkspace(doc,api){
   if(!store.add({id:api.uid(),mapId:map.id,name,camera:map.camera})){api.toast('Impossible de mémoriser cette vue : caméra libre requise, maximum 40 repères.');return}
   by('bookmarkName').value='';renderBookmarks();api.toast(store.persistent()?'Repère mémorisé.':'Repère mémorisé pour cette session uniquement.');
  };
- by('quickFocus').onclick=api.focusSelection;by('quickControl').onclick=api.controlSelection;by('quickInspect').onclick=()=>api.panel('inspectorPanel');
+
  for(const b of doc.querySelectorAll('[data-graphics-profile]'))b.onclick=()=>api.profile(b.dataset.graphicsProfile);
  const panelKeys={'1':'inspectorPanel','2':'layersPanel','3':'lightPanel','4':'effectsPanel','5':'journalPanel','6':'bookmarksPanel'};
  function handleKey(e){
@@ -147,7 +147,7 @@ export function mountWorkspace(doc,api){
  }
  function refresh(){
   syncDockState(doc);const o=api.selection(),show=api.isMJ()&&api.mode()==='play'&&!!o;
-  setHidden(by('selectionBar'),!show);if(show){setText(by('quickSelectionName'),o.name);setText(by('quickSelectionMeta'),api.selectionLabel(o));setHidden(by('quickControl'),!api.isCharacter(o))}
+
   if(!by('bookmarksPanel').hidden)renderBookmarks();
  }
  return {open,handleKey,refresh,setFocus,renderBookmarks};
