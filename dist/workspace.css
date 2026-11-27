@@ -209,3 +209,20 @@ body.workspace-ui #mapActions{position:absolute;inset:70px 12px auto auto;width:
 .native-canvas-ui .canvas-native-forms{position:absolute;z-index:40;top:145px;left:50%;transform:translateX(-50%);width:min(810px,calc(100% - 52px));bottom:160px;overflow:auto;padding:8px 14px 18px;background:#17271f;border-radius:7px;scrollbar-color:#647d6c #14221f}
 .native-canvas-ui .canvas-native-forms #heldToolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 @media(max-width:700px){.native-canvas-ui .canvas-native-forms{top:176px;bottom:135px;width:calc(100% - 40px)}}
+
+/* Brume: forge arcanique. Native advanced fields keep keyboard accessibility. */
+.native-canvas-ui .canvas-native-forms{color:#f1e5cd;background:radial-gradient(ellipse at 50% 0,#203b34,#0b191a 70%);border:1px solid #92764b;border-radius:3px;box-shadow:inset 0 0 0 3px #112623,inset 0 0 0 4px #65543b;scrollbar-color:#bb9658 #101c1b;padding:16px 18px}
+.native-canvas-ui .canvas-native-forms h3,.native-canvas-ui .canvas-native-forms legend{font-family:Georgia,serif;color:#e8c47d;letter-spacing:1px}
+.native-canvas-ui .canvas-native-forms h3{border-bottom:1px solid #776448;padding-bottom:9px}
+.native-canvas-ui .canvas-native-forms label{color:#ddcfb4}
+.native-canvas-ui .canvas-native-forms input:not([type=range]):not([type=checkbox]),.native-canvas-ui .canvas-native-forms select{background:#0b1818;color:#f1e5cd;border:1px solid #8a734f;border-radius:3px}
+.native-canvas-ui .canvas-native-forms button{border:1px solid #9b8155;border-radius:3px;background:linear-gradient(#293f36,#132321);color:#f1e5cd;box-shadow:inset 0 0 0 2px #142724;font-family:Georgia,serif}
+.native-canvas-ui .canvas-native-forms button:hover,.native-canvas-ui .canvas-native-forms button:focus-visible{border-color:#f4d58e;box-shadow:0 0 9px #e8c47d55}
+.native-canvas-ui .canvas-native-forms button.primary{background:linear-gradient(#e4c588,#ac8142);color:#18241f;box-shadow:inset 0 0 0 2px #e5cb93}
+.native-canvas-ui .canvas-native-forms input[type=range]{accent-color:#e8c47d;height:20px}
+.native-canvas-ui .canvas-native-forms input[type=checkbox]{accent-color:#d9b675}
+.native-canvas-ui .canvas-native-forms .throw-settings,.native-canvas-ui .canvas-native-forms .effect-layer-card{background:linear-gradient(145deg,#24372e,#101d1b);border:1px solid #a18552;border-radius:4px;padding:14px}
+.native-canvas-ui .canvas-native-forms .micro{color:#a8bcb0}
+.native-canvas-ui .canvas-native-forms #zoneTools>p:first-child{padding:18px;border:1px solid #8b754e;background:radial-gradient(ellipse at left,#354735,#10221f);font-family:Georgia,serif;font-size:15px;line-height:1.5}
+.native-canvas-ui .canvas-native-forms .effect-timeline{border:1px solid #796343;background:repeating-linear-gradient(90deg,#ffffff08 0 1px,transparent 1px 10%);padding:8px}
+.native-canvas-ui .canvas-native-forms .effect-track span{border-width:1px;border-style:solid;background:#253b35;border-radius:2px;color:#f1e5cd;box-shadow:inset 0 0 8px #0008}
