@@ -64,7 +64,7 @@ export function createThrowVisuals(factory){
   prepare();
   const root=new T.Group(),profile=PROFILE[p.config.id]||PROFILE.blast,[smokeCount,fireCount,shardCount]=BUDGET[quality]||BUDGET.balanced,materials=new Set(),add=o=>{root.add(o);materials.add(o.material);return o};
   const body=bodies.create(p.config.id,quality,p.config.shape,p.config.color);root.add(body.group);
-  const halo=add(sprite(profile.flash,tex.halo,true)),core=add(new T.Mesh(orbGeo,basic('#ffffff',null,true))),trail=add(batch(7,orbGeo,basic(p.config.color,null,true)));
+  const halo=add(sprite(profile.flash,tex.halo,true)),core=add(new T.Mesh(orbGeo,basic('#ffffff',null,true))),trail=add(batch(24,orbGeo,basic(p.config.color,null,true)));
   const flash=add(sprite(profile.flash,tex.halo,true)),wave=add(sprite(p.config.color,tex.ring,true)),wave2=add(sprite(profile.flash,tex.ring,true));wave.rotation.x=-Math.PI/2;wave.position.y=.045;
   const smoke=add(batch(smokeCount,plane,basic(profile.cloud,tex.smoke))),fire=profile.fire?add(batch(fireCount,plane,basic('#ffffff',tex.fire))):null;
   const shards=add(batch(shardCount,shardGeo,basic(profile.shards,null,p.config.id==='arcane'||p.config.id==='storm')));
@@ -116,8 +116,8 @@ export function createThrowVisuals(factory){
    const strength=p.config.strength??1;
    if(e.lens)e.lens.update(at,r,p.age,life,strength,camera);
    if(p.phase==='flight'){
-    if(e.lens)e.lens.mesh.visible=false;e.body.group.visible=false;e.core.visible=e.halo.visible=e.trail.visible=true;e.core.scale.setScalar(.085+r*.035);billboard(e.halo,.5+r*.19);e.trail.count=7;
-    for(let i=0;i<7;i++){const t=(i+1)/7;dummy.position.set((p.tail.x-at.x)*t,(p.tail.z-at.z)*t,(p.tail.y-at.y)*t);dummy.rotation.set(0,0,0);dummy.scale.setScalar((.055+r*.015)*(1-t*.8));dummy.updateMatrix();e.trail.setMatrixAt(i,dummy.matrix)}e.trail.instanceMatrix.needsUpdate=true;continue;
+    if(e.lens)e.lens.mesh.visible=false;e.body.group.visible=false;e.core.visible=e.halo.visible=e.trail.visible=true;e.core.scale.setScalar(.085+r*.035);billboard(e.halo,.5+r*.19);e.trail.count=p.trail?.length??7;
+    for(let i=0;i<e.trail.count;i++){const t=(i+1)/e.trail.count,q=p.trail?.[i];dummy.position.set(q?q.x-at.x:(p.tail.x-at.x)*t,q?q.z-at.z:(p.tail.z-at.z)*t,q?q.y-at.y:(p.tail.y-at.y)*t);dummy.rotation.set(0,0,0);dummy.scale.setScalar((.12+r*.025)*(1-t*.85));dummy.updateMatrix();e.trail.setMatrixAt(i,dummy.matrix)}e.trail.instanceMatrix.needsUpdate=true;continue;
    }
    e.core.visible=e.halo.visible=e.trail.visible=false;
    e.body.update(a,r);if(e.lens||kind==='shockwave')e.body.group.visible=false;
@@ -136,5 +136,5 @@ export function createThrowVisuals(factory){
   for(const [id,e]of entries)if(!active.has(id))remove(id,e);
   return list.length>0;
  }
- return{group,update,render:optical.render,optical,stats:()=>({active:entries.size,simplified:proxy?.count||0,instances:[...entries.values()].reduce((n,e)=>n+e.smokeSeeds.length+(e.fire?e.fireSeeds.length:0)+e.shardSeeds.length+7,0)}),dispose(){for(const [id,e]of entries)remove(id,e);if(proxy){group.remove(proxy);proxy.dispose()}proxyGeo.dispose();proxyMat.dispose();optical.dispose();for(const t of Object.values(tex))t.dispose();plane.dispose();orbGeo.dispose();shardGeo.dispose();runeGeo.dispose();bodies?.dispose()}};
+ return{group,update,render:optical.render,optical,stats:()=>({active:entries.size,simplified:proxy?.count||0,instances:[...entries.values()].reduce((n,e)=>n+e.smokeSeeds.length+(e.fire?e.fireSeeds.length:0)+e.shardSeeds.length+24,0)}),dispose(){for(const [id,e]of entries)remove(id,e);if(proxy){group.remove(proxy);proxy.dispose()}proxyGeo.dispose();proxyMat.dispose();optical.dispose();for(const t of Object.values(tex))t.dispose();plane.dispose();orbGeo.dispose();shardGeo.dispose();runeGeo.dispose();bodies?.dispose()}};
 }
