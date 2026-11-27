@@ -44,7 +44,11 @@ jobs:
     outputs:
       pages_enabled: ${{ steps.pages.outputs.enabled }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
       - name: Verify and import source files
         shell: bash
         run: |
@@ -99,7 +103,7 @@ jobs:
           fi
       - name: Configure Pages
         if: steps.pages.outputs.enabled == 'true'
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Prepare consistent project URL
         if: steps.pages.outputs.enabled == 'true'
         shell: bash
@@ -113,7 +117,7 @@ jobs:
           test -s "$RUNNER_TEMP/pages-site/dist/index.html"
       - name: Upload site
         if: steps.pages.outputs.enabled == 'true'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ${{ runner.temp }}/pages-site
   deploy:
@@ -126,7 +130,7 @@ jobs:
     steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
       - name: Verify public entrypoint and game assets
         env:
           SITE_URL: ${{ steps.deployment.outputs.page_url }}
@@ -134,23 +138,34 @@ jobs:
         run: |
           set -euo pipefail
           base="${SITE_URL%/}"
-          query="?version=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT"
           mkdir -p "$RUNNER_TEMP/smoke"
-          for attempt in 1 2 3 4 5; do
-            if curl -fsSL --max-time 15 "$base/$query" -o "$RUNNER_TEMP/smoke/root.html" &&
-               grep -Fq 'dist/index.html' "$RUNNER_TEMP/smoke/root.html" &&
-               curl -fsSL --max-time 15 "$base/dist/index.html$query" -o "$RUNNER_TEMP/smoke/game.html" &&
-               grep -Fq 'id="app"' "$RUNNER_TEMP/smoke/game.html" &&
-               grep -Fq "src=\"bootstrap.mjs?v=$GITHUB_SHA\"" "$RUNNER_TEMP/smoke/game.html" &&
-               grep -Fq "./editor.mjs?v=$GITHUB_SHA" "$RUNNER_TEMP/smoke/game.html" &&
-               curl -fsSL --max-time 15 "$base/dist/editor.mjs?v=$GITHUB_SHA" -o "$RUNNER_TEMP/smoke/editor.mjs" &&
-               curl -fsSL --max-time 15 "$base/dist/assets/materials/grass.jpg$query" -o "$RUNNER_TEMP/smoke/grass.jpg" &&
-               curl -fsSL --max-time 15 "$base/dist/assets/npc/guard-00.webp$query" -o "$RUNNER_TEMP/smoke/guard.webp" &&
-               python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); assert (p/"editor.mjs").stat().st_size>1000; assert (p/"grass.jpg").read_bytes().startswith(bytes.fromhex("ffd8")); assert (p/"guard.webp").read_bytes()[8:12]==b"WEBP"' "$RUNNER_TEMP/smoke"; then
-              echo "Public game HTML, entry module and grass texture verified: $base/dist/index.html"
+          cd "$RUNNER_TEMP/smoke"
+          fetch() {
+            curl -fsSL --max-time 15 -H 'Cache-Control: no-cache' "$1" -o "$2"
+          }
+          for attempt in $(seq 1 12); do
+            query="?version=$GITHUB_SHA-$GITHUB_RUN_ATTEMPT-$attempt"
+            echo "Public verification attempt $attempt/12"
+            if ! fetch "$base/$query" root.html || ! grep -Fq 'dist/index.html' root.html; then
+              echo "Root entrypoint missing or unexpected."
+            elif ! fetch "$base/dist/index.html$query" game.html || ! grep -Fq 'id="app"' game.html; then
+              echo "Game HTML missing or unexpected."
+            elif ! grep -Fq "name=\"brume-revision\" content=\"$GITHUB_SHA\"" game.html ||
+                 ! grep -Fq "src=\"bootstrap.mjs?v=$GITHUB_SHA\"" game.html ||
+                 ! grep -Fq "./editor.mjs?v=$GITHUB_SHA" game.html; then
+              echo "Revision mismatch. Expected $GITHUB_SHA; published:"
+              grep -oE 'name="brume-revision" content="[^"]+"|src="bootstrap.mjs[^"]*"' game.html | head -5 || true
+              echo "Check that Settings > Pages > Source is GitHub Actions if unversioned HTML persists."
+            elif fetch "$base/dist/editor.mjs?v=$GITHUB_SHA" editor.mjs &&
+                 fetch "$base/dist/assets/materials/grass.jpg$query" grass.jpg &&
+                 fetch "$base/dist/assets/npc/guard-00.webp$query" guard.webp &&
+                 python3 -c 'from pathlib import Path; assert Path("editor.mjs").stat().st_size>1000; assert Path("grass.jpg").read_bytes().startswith(bytes.fromhex("ffd8")); assert Path("guard.webp").read_bytes()[8:12]==b"WEBP"'; then
+              echo "Public game revision, entry module and assets verified: $base/dist/index.html"
               exit 0
+            else
+              echo "One or more published assets are missing or invalid."
             fi
-            sleep 3
+            sleep 5
           done
-          echo "::error::Published site did not pass the HTTP checks."
+          echo "::error::Published site did not pass the revision and asset checks."
           exit 1
