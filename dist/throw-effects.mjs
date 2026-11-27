@@ -104,6 +104,10 @@ export function createThrowQueue(){
    const config=throwConfig(item),duration=Math.max(16,throwDistance(from,to)/config.speed*1000);
    items.push({id:'throw-'+(++serial),map,from:{...from},to:{x:to.x,y:to.y,z:to.z},config,started:now,duration,impactAt:null});return true;
   },
+  impact(map,point,item,W,now){
+   if(!validImpact(map,point,W)||!Number.isFinite(now)||items.length>=32)return false;
+   const config=throwConfig(item);items.push({id:'throw-'+(++serial),map,to:{x:point.x,y:point.y,z:point.z},config,impactAt:now,started:now,duration:0});return true;
+  },
   advance(map,enabled,now,onImpact){
    if(!enabled){items=[];return []}
    items=items.filter(p=>p.map===map);
