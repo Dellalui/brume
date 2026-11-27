@@ -226,3 +226,6 @@ body.workspace-ui #mapActions{position:absolute;inset:70px 12px auto auto;width:
 .native-canvas-ui .canvas-native-forms #zoneTools>p:first-child{padding:18px;border:1px solid #8b754e;background:radial-gradient(ellipse at left,#354735,#10221f);font-family:Georgia,serif;font-size:15px;line-height:1.5}
 .native-canvas-ui .canvas-native-forms .effect-timeline{border:1px solid #796343;background:repeating-linear-gradient(90deg,#ffffff08 0 1px,transparent 1px 10%);padding:8px}
 .native-canvas-ui .canvas-native-forms .effect-track span{border-width:1px;border-style:solid;background:#253b35;border-radius:2px;color:#f1e5cd;box-shadow:inset 0 0 8px #0008}
+
+/* Camera controls are drawn and hit-tested by the Canvas HUD. */
+.canvas-camera-dock .camera-bar{display:none!important}
