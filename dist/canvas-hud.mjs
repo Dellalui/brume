@@ -11,6 +11,10 @@ export function hudLayout(w,h){
  return{panel,slot,barX,barY,barW}
 }
 // One geometry source for drawing, hit testing, forms and browser tests.
+export function playerBarLayout(w,h){
+ const gap=w<420?4:7,pad=10,slot=Math.max(1,Math.min(57,Math.floor((w-40-2*pad-8*gap)/9))),width=9*slot+8*gap+2*pad;
+ return{x:(w-width)/2,y:Math.max(0,h-slot-54),w:width,h:slot+2*pad,slot,gap,pad}
+}
 export function inventoryLayout(p,category='blocks'){
  const pad=p.w>=560?22:12,gap=8,cols=p.w>=1000?10:p.w>=310?5:3;
  const rows=Math.ceil(HUD_CATEGORIES.length/cols),tw=(p.w-2*pad-(cols-1)*gap)/cols,th=p.w>=550?37:31,step=th+gap;
@@ -50,6 +54,16 @@ export function mountCanvasHUD(doc,api){
   const hoveredSlot=regions.find(r=>r.slot!=null&&contains(r,cursor.x,cursor.y));const name=s.slots[hoveredSlot?.slot??s.active]?.name||'';const plaque={x:w/2-Math.min(150,barW*.25)-38,y:y-30,w:Math.min(300,barW*.5),h:24};arcaneTile(ctx,plaque,{selected:true});text(name,plaque.x+plaque.w/2,y-18,plaque.w-16,14,colors.fg,'center',650);button({x:x+barW-91,y:y-31,w:91,h:24},'settings','Réglages · R',api.settings);
   text('E : inventaire   ·   1–9 : raccourcis   ·   R : réglages',w/2,y+z+17,w-12,10,colors.muted,'center')
  }
+ function drawPlayerBar(s,w,h){
+  const r=playerBarLayout(w,h);panel(r);
+  for(let i=0;i<9;i++){
+   const cell={x:r.x+r.pad+i*(r.slot+r.gap),y:r.y+r.pad,w:r.slot,h:r.slot};
+   box(cell,'#101e1dcc','#776448',5);
+   text(String(i+1),cell.x+6,cell.y+9,12,9,colors.muted);
+  }
+  const name=s.player.name||'Personnage',labelW=Math.min(260,r.w-20);
+  text(name,w/2,r.y-12,labelW,14,colors.gold,'center',650);
+ }
  function drawInventory(s,l){const p=l.panel;if(p.h<70)return;panel(p);region(p,'inventory-panel',()=>{searching=false;familyOpen=false});
   text('◇  ATELIER DU MAÎTRE DU JEU  ◇',p.x+p.w/2,p.y+18,p.w-90,11,colors.gold,'center',700);text('Inventaire de construction',p.x+p.w/2,p.y+42,p.w-90,p.w<450?19:26,colors.fg,'center',650);separator(ctx,p.x+22,p.y+61,p.w-44);
   button({x:p.x+p.w-43,y:p.y+9,w:32,h:34},'close','×',api.close);
@@ -69,7 +83,7 @@ export function mountCanvasHUD(doc,api){
  function drawContext(s,w,h){const m=s.context;if(!m)return;const width=Math.min(245,w-12),height=35+m.actions.length*32+8,r={x:Math.max(6,Math.min(m.x,w-width-6)),y:Math.max(6,Math.min(m.y,h-height-6)),w:width,h:height};panel(r);region(r,'context-panel',()=>{});text(m.name,r.x+12,r.y+17,r.w-24,13,colors.gold,'left',650);m.actions.forEach((a,i)=>button({x:r.x+6,y:r.y+34+i*32,w:r.w-12,h:29},'context-'+i,a.label,a.run))}
  function draw(){frame=0;if(!active)return;origin=viewport.getBoundingClientRect();const w=origin.width,h=origin.height;if(w<1||h<1)return;const dpr=Math.min(2,win.devicePixelRatio||1),bw=Math.max(1,Math.round(w*dpr)),bh=Math.max(1,Math.round(h*dpr));if(layer.width!==bw||layer.height!==bh){layer.width=bw;layer.height=bh}ctx.setTransform(bw/w,0,0,bh/h,0,0);ctx.clearRect(0,0,w,h);regions=[];grid=null;maxScroll=0;
   const s=api.state();layer.style.pointerEvents=s.open?'auto':'none';layout=hudLayout(w,h);const forms=doc.getElementById('creativeForms');if(forms&&s.open&&['settings','zone'].includes(s.category)){const r=inventoryLayout(layout.panel,s.category).forms;Object.assign(forms.style,{left:r.x+'px',top:r.y+'px',width:r.w+'px',height:r.h+'px',bottom:'auto',transform:'none'});}if(s.category!==lastCategory||s.query!==lastQuery||s.family!==lastFamily){scroll=0;lastCategory=s.category;lastQuery=s.query;lastFamily=s.family}if(!s.open){searching=false;familyOpen=false;drag=null}
-  if(s.building)drawBar(s,layout,w);if(s.open)drawInventory(s,layout);else drawSelection(s,w,h);drawContext(s,w,h);
+  if(s.building)drawBar(s,layout,w);else if(s.player)drawPlayerBar(s,w,h);if(s.open)drawInventory(s,layout);else drawSelection(s,w,h);drawContext(s,w,h);
   if(drag){ctx.globalAlpha=.9;box({x:cursor.x-30,y:cursor.y-30,w:60,h:60},colors.card,colors.gold);icon(drag,cursor.x,cursor.y,36);ctx.globalAlpha=1}
  }
  function point(e){const r=viewport.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
