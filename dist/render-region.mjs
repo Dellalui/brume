@@ -17,7 +17,8 @@ export function createRenderRegion(camera,map){
  }
  // Evict by distance, never merely because the player looked away.
  retained.sort((a,b)=>a.d-b.d||a.k.localeCompare(b.k));
- for(const {k} of retained.slice(0,MAX_EXTRA))chunks.add(k);
+ const activeCount=chunks.size,residentLimit=Math.max(activeCount,48,Math.ceil(96*(far/80)**2));
+ for(const {k} of retained.slice(0,Math.min(MAX_EXTRA,residentLimit-activeCount)))chunks.add(k);
  const cell=(x,y)=>chunks.has(Math.floor(x/CHUNK)+','+Math.floor(y/CHUNK));
  const contains=(x,y,r=0)=>{
   if(visible(x,y,r)||cell(x,y))return true;
@@ -26,6 +27,6 @@ export function createRenderRegion(camera,map){
   return false;
  };
  const object=o=>{const w=o.w||1,d=o.d||1;return contains(o.x+w/2,o.y+d/2,Math.hypot(w,d)/2+(o.light?.radius||o.effect?.size||0))};
- const region={key:small?'whole-map':[...chunks].sort().join(';'),contains,cell,object,origin,chunks,resident:retained.length,bounds:small?{x0:0,y0:0,x1:map.width,y1:map.height}:{x0:Math.max(0,origin.x-far-16),y0:Math.max(0,origin.y-far-16),x1:Math.min(map.width,origin.x+far+16),y1:Math.min(map.height,origin.y+far+16)}};
+ const region={key:small?'whole-map':[...chunks].sort().join(';'),contains,cell,object,origin,chunks,resident:chunks.size-activeCount,residentLimit,bounds:small?{x0:0,y0:0,x1:map.width,y1:map.height}:{x0:Math.max(0,origin.x-far-16),y0:Math.max(0,origin.y-far-16),x1:Math.min(map.width,origin.x+far+16),y1:Math.min(map.height,origin.y+far+16)}};
  regionCache.set(map,{key:cacheKey,scope,region});return region;
 }

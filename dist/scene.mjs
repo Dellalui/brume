@@ -380,18 +380,16 @@ renderLiquids(opts,groups,origin,size);renderTransparentBlocks(groups);syncRelie
    if(o.labelMode==='hidden'||o.labelMode==='selected'&&!active)continue;
    if(!root?.visible||root.userData.alpha<.14||(!name&&!bars.length)||opts.mode!=='mj'&&(opts.map.camera.mode==='first'?!firstPersonVisible(o,opts):(W.character(o)?strength(o,opts)<.55:(opts.sight?.get(W.cellKey(p.x,p.y))?.detail??0)<.55)))continue;
    const point=new T.Vector3(p.x,W.elevation(o,opts.map)+.12,p.y).project(camera);if(point.z< -1||point.z>1||Math.abs(point.x)>1||Math.abs(point.y)>1)continue;
-   const shown=bars.slice(0,active?5:3),extra=bars.length-shown.length,w=Math.min(width-12,active?158:122),h=10+(name?19:0)+shown.length*23+(extra?15:0);
+   // Screen-space scale comes from the projected body, not a fixed nameplate.
+   const top=new T.Vector3(p.x,W.elevation(o,opts.map)+W.eyeHeight(o)*1.15,p.y).project(camera),size=Math.abs(top.y-point.y)*height/2;
+   if(size<9&&!active)continue;
+   const shown=opts.mode==='mj'?(active?bars.slice(0,1):[]):bars.slice(0,active?2:1),extra=0;
+   const font=Math.max(9,Math.min(12,size*.16)),label=String(o.name||'');
+   ctx.font='600 '+font+'px system-ui';const w=Math.min(width-12,Math.max(32,Math.min(112,ctx.measureText(label).width+14,size*1.8+20))),h=font+5+shown.length*6;
    const x=Math.max(6,Math.min(width-w-6,(point.x+1)*width/2-w/2)),y=Math.max(6,Math.min(height-h-6,(1-point.y)*height/2+12));
    if(!active&&placed.some(r=>x<r.x+r.w+5&&x+w+5>r.x&&y<r.y+r.h+5&&y+h+5>r.y))continue;
-   placed.push({x,y,w,h});ctx.fillStyle='#0c1b19e8';ctx.fillRect(x,y,w,h);ctx.strokeStyle=active?'#ad905d':'#5d6250';ctx.lineWidth=1;ctx.strokeRect(x+.5,y+.5,w-1,h-1);
-   let row=y+6;ctx.textBaseline='middle';ctx.textAlign='center';
-   if(name){ctx.font='600 12px system-ui';ctx.fillStyle=active?'#f1d795':'#eeeade';ctx.fillText(o.name||'',x+w/2,row+7,w-12);row+=19}
-   for(const bar of shown){
-    const value=bar.value+'/'+bar.max;ctx.font='500 10px system-ui';ctx.textAlign='right';ctx.fillStyle='#eeeade';ctx.fillText(value,x+w-7,row+5,w*.42);
-    ctx.textAlign='left';ctx.fillStyle=bar.color;ctx.fillText(bar.name,x+7,row+5,Math.max(10,w-24-ctx.measureText(value).width));
-    ctx.fillStyle='#33413a';ctx.fillRect(x+7,row+13,w-14,5);ctx.fillStyle=bar.color;ctx.fillRect(x+7,row+13,(w-14)*bar.value/bar.max,5);row+=23;
-   }
-   if(extra){ctx.textAlign='center';ctx.font='500 10px system-ui';ctx.fillStyle='#bdc7b4';ctx.fillText('+'+extra+' ressource'+(extra>1?'s':''),x+w/2,row+6,w-10)}
+   placed.push({x,y,w,h});ctx.save();ctx.textBaseline='middle';ctx.textAlign='center';ctx.font='600 '+font+'px system-ui';ctx.lineWidth=3;ctx.strokeStyle='#081311cc';ctx.fillStyle=active?'#f1d795':'#eeeade';if(name){ctx.strokeText(label,x+w/2,y+font/2,w);ctx.fillText(label,x+w/2,y+font/2,w)}let by=y+font+3;for(const bar of shown){ctx.fillStyle='#081311cc';ctx.fillRect(x,by,w,4);ctx.fillStyle=bar.color;ctx.fillRect(x,by,w*bar.value/bar.max,3);by+=6}ctx.restore();continue;
+
   }
  }
 
