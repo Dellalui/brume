@@ -609,10 +609,10 @@ function launchThrownEffect(point,item){
 }
 function commitThrownImpacts(impacts){
  if(mode!=='build'||viewMode!=='mj')return;
- const m=map(),result=applyImpactBatch(m,impacts,W,()=>{stopCreativeStroke();stopMovement();remember()});
+ const m=map();let token=null;const result=applyImpactBatch(m,impacts,W,()=>{stopCreativeStroke();stopMovement();remember();token=scene.beginImpactEdit(m,terrainEpoch)});
  if(result.changed){
   if(selection&&!m.objects.some(o=>o.id===selection))selection=null;
-  settleBlockActors();invalidate();save();refresh();
+  settleBlockActors();invalidate();scene.finishImpactEdit(m,terrainEpoch,token,result.changes);save();refresh();
  }
  if(result.destructive)toast((result.destructive>1?result.destructive+' impacts · ':'')+result.count+' bloc(s) ou couches de sol retirés · '+result.protectedCount+' protégé(s) · '+result.resistedCount+' résistant(s)'+(result.limited?' · limite de 512 éléments par impact':''));
 }

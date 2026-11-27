@@ -32,6 +32,7 @@ function prepareBlockOcclusion(map,{region=null,slice=32,mode='mj',columns=Objec
   const b=W.bounds(o),z=W.elevation(o,map),def=W.BLOCKS[o.material||'stone'];if(z>=slice)continue;
   add({id:o.id,min:[b.x,b.y,z],max:[b.x+b.w,b.y+b.h,z+o.height],opaque:!!def?.opaque&&def.opacity===1&&(o.opacity??1)===1&&!o.imageId,canHide:!o.effect?.kind&&!o.aura?.enabled});
  }
+ const detach=(map,k,b)=>{const list=map.get(k);if(!list)return;const i=list.indexOf(b);if(i>=0)list.splice(i,1);if(!list.length)map.delete(k)};
  // Full cubes need only unit membership when there are no partial targets.
  // Build the expensive broad-phase grids once per world revision, not per view.
  const needsGrid=boxes.some(b=>!b.unit&&b.canHide);
@@ -61,7 +62,19 @@ function prepareBlockOcclusion(map,{region=null,slice=32,mode='mj',columns=Objec
   }
   return true;
  }
- return {boxes,unitOwners,hidden};
+ // Deletion cannot introduce a new partial target, so the original grid
+ // configuration remains valid. Remove every reference to an actual hit.
+ function remove(b){
+  if(b.unitKey!==undefined)detach(unitOwners,b.unitKey,b);
+  if(b.opaque&&(needsGrid||!b.unit)){
+   for(let x=Math.floor(b.min[0]/BUCKET);x<=Math.floor((b.max[0]-EPS)/BUCKET);x++)
+    for(let y=Math.floor(b.min[1]/BUCKET);y<=Math.floor((b.max[1]-EPS)/BUCKET);y++)
+     for(let z=Math.floor(b.min[2]/BUCKET);z<=Math.floor((b.max[2]-EPS)/BUCKET);z++){
+      const k=key(x,y,z);if(needsGrid)detach(grid,k,b);if(!b.unit)detach(partialGrid,k,b);
+     }
+  }
+ }
+ return {boxes,unitOwners,hidden,remove};
 }
 // Reference implementation for callers and exact-parity tests.
 export function buildBlockOcclusion(map,options={}){
@@ -76,15 +89,18 @@ function forSectors(x0,y0,x1,y1,fn){
 // The one-cell halo includes all possible adjacent unit faces; arbitrary
 // placed volumes are indexed into every sector that their bounds overlap.
 export function createChunkOcclusionCache(){
- let state=null,indexBuilds=0,chunkBuilds=0,chunkHits=0;
+ let state=null,indexBuilds=0,chunkBuilds=0,chunkHits=0,removalUpdates=0,removedBoxes=0,invalidatedChunks=0;
+ const context=map=>JSON.stringify([map.width,map.height,map.groups.map(g=>[g.id,g.visible]),map.chunks.length]);
+ const revisionOf=(map,slice,mode,epoch)=>JSON.stringify([map.blockRevision,map.buildRevision,epoch,slice,mode,context(map)]);
+ const matches=(s,map,slice,mode,epoch)=>s&&s.map===map&&s.revision===revisionOf(map,slice,mode,epoch)&&s.chunks===map.chunks&&s.blocks===map.blocks&&s.objects===map.objects;
  function prepare(map,slice,mode,epoch){
-  const revision=JSON.stringify([map.width,map.height,map.blockRevision,map.buildRevision,epoch,slice,mode,map.groups.map(g=>[g.id,g.visible]),map.chunks.length]);
-  if(state&&state.map===map&&state.revision===revision&&state.chunks===map.chunks&&state.blocks===map.blocks&&state.objects===map.objects)return state;
-  const index=prepareBlockOcclusion(map,{slice,mode}),groups=new Map(),voxelSectors=new Set(),placedById=new Map(),placedSpatial=new Map();
+  const revision=revisionOf(map,slice,mode,epoch);
+  if(matches(state,map,slice,mode,epoch))return state;
+  const index=prepareBlockOcclusion(map,{slice,mode}),groups=new Map(),voxelSectors=new Set(),voxelById=new Map(),placedById=new Map(),placedSpatial=new Map(),voxelDependents=new Map(),placedDependents=new Map();
   for(const box of index.boxes){
    let g=groups.get(box.sector);if(!g)groups.set(box.sector,g={boxes:[],min:[Infinity,Infinity],max:[-Infinity,-Infinity],variants:new Map()});
    g.boxes.push(box);for(let a=0;a<2;a++){g.min[a]=Math.min(g.min[a],box.min[a]);g.max[a]=Math.max(g.max[a],box.max[a])}
-   if(box.voxel)voxelSectors.add(box.sector);
+   if(box.voxel){voxelSectors.add(box.sector);voxelById.set(box.id,box)}
    else{placedById.set(box.id,box);forSectors(box.min[0]-EPS,box.min[1]-EPS,box.max[0]+EPS,box.max[1]+EPS,k=>append(placedSpatial,k,box))}
   }
   for(const g of groups.values()){
@@ -93,10 +109,11 @@ export function createChunkOcclusionCache(){
     if(voxelSectors.has(k))voxels.push(k);
     for(const box of placedSpatial.get(k)||[])if(box.min[0]<=x1&&box.max[0]>=x0&&box.min[1]<=y1&&box.max[1]>=y0)placed.add(box);
    });
-   g.voxelDeps=voxels;g.placedDeps=[...placed];
+   g.voxelDeps=voxels;g.placedDeps=[...placed];for(const k of voxels)append(voxelDependents,k,g);for(const box of placed)append(placedDependents,box.id,g);
   }
   indexBuilds++;
-  return state={map,revision,chunks:map.chunks,blocks:map.blocks,objects:map.objects,index,groups,placedById};
+  index.boxes.length=0; // groups own the live boxes; do not retain removed geometry globally
+  return state={map,revision,slice,mode,chunks:map.chunks,blocks:map.blocks,objects:map.objects,index,groups,voxelById,placedById,voxelDependents,placedDependents,fixedElevation:map.objects.every(o=>o.type!=='block'||Number.isFinite(o.baseZ))};
  }
  function collect(map,{region=null,objects=map.objects,slice=32,mode='mj',epoch=0}={}){
   const s=prepare(map,slice,mode,epoch),activeObjects=new Set(objects.map(o=>o.id)),activeVoxel=k=>!region||region.chunks.has(k),active=b=>b.voxel?activeVoxel(b.sector):activeObjects.has(b.id);
@@ -125,5 +142,40 @@ export function createChunkOcclusionCache(){
   }
   return {hiddenObjects,hiddenVoxels,fullUnits,candidates};
  }
- return {collect,stats:()=>({occlusionIndexBuilds:indexBuilds,occlusionChunkBuilds:chunkBuilds,occlusionChunkHits:chunkHits}),reset(){state=null}};
+ // Only the explicit destructive-impact transaction can use this fast
+ // path. Other editing, undo, group changes and dynamic-elevation placed
+ // objects retain the conservative complete rebuild.
+ function beginRemoval(map,epoch){
+  const s=state;if(!s?.fixedElevation||!matches(s,map,s.slice,s.mode,epoch))return null;
+  return {state:s,map,epoch,context:context(map),blockRevision:map.blockRevision||0,buildRevision:map.buildRevision||0,objectCount:map.objects.length};
+ }
+ function finishRemoval(map,epoch,token,changes){
+  if(!token||token.state!==state||token.map!==map||!changes)return false;
+  const s=state;
+  if(map.chunks!==s.chunks||map.blocks!==s.blocks||context(map)!==token.context||
+     epoch!==token.epoch+1||(map.buildRevision||0)!==token.buildRevision+1||
+     (map.blockRevision||0)!==token.blockRevision+changes.voxels.length+changes.ground||
+     map.objects.length!==token.objectCount-changes.objects.length)return false;
+  const dirty=new Set(),removedByGroup=new Map();
+  const erase=(box,dependents)=>{
+   if(!box)return;
+   s.index.remove(box);removedBoxes++;
+   const g=s.groups.get(box.sector);if(g){let set=removedByGroup.get(g);if(!set)removedByGroup.set(g,set=new Set());set.add(box);dirty.add(g)}
+   for(const d of dependents||[])dirty.add(d);
+  };
+  for(const id of changes.voxels){
+   const box=s.voxelById.get(id);if(!box)continue;
+   erase(box,s.voxelDependents.get(box.sector));s.voxelById.delete(id);
+  }
+  for(const id of changes.objects){
+   erase(s.placedById.get(id),s.placedDependents.get(id));s.placedById.delete(id);
+  }
+  for(const [g,set]of removedByGroup)g.boxes=g.boxes.filter(b=>!set.has(b));
+  for(const g of dirty)g.variants.clear();
+  // Dependency bounds are conservative supersets after a deletion. Keeping
+  // them avoids rebuilding the entire spatial graph and remains exact.
+  s.objects=map.objects;s.revision=revisionOf(map,s.slice,s.mode,epoch);
+  removalUpdates++;invalidatedChunks+=dirty.size;return true;
+ }
+ return {collect,beginRemoval,finishRemoval,stats:()=>({occlusionIndexBuilds:indexBuilds,occlusionChunkBuilds:chunkBuilds,occlusionChunkHits:chunkHits,occlusionRemovalUpdates:removalUpdates,occlusionRemovedBoxes:removedBoxes,occlusionInvalidatedChunks:invalidatedChunks}),reset(){state=null}};
 }

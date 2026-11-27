@@ -81,37 +81,37 @@ export function planImpact(map,point,item,W){
  for(const b of candidates.slice(0,MAX_REMOVALS))(b.kind==='voxel'?plan.voxels:b.kind==='ground'?plan.ground:plan.objects).push(b);
  return plan;
 }
-export function applyImpact(map,plan,W){
+export function applyImpact(map,plan,W,changes=null){
  let count=0;
  // Check protection again when committing; a locked group never loses a block.
  const locks=new Set((map.groups||[]).filter(g=>g.locked||g.protected).map(g=>g.id));
  for(const b of plan.voxels){
   if(locks.has(map.blockGroups?.[b.key])||map.blocks?.[b.x+','+b.y]?.[b.z]!==b.material)continue;
-  if(W.setBlock(map,b.x,b.y,b.z,null)){if(map.blockGroups)delete map.blockGroups[b.key];count++}
+  if(W.setBlock(map,b.x,b.y,b.z,null)){if(map.blockGroups)delete map.blockGroups[b.key];changes?.voxels.push(b.key);count++}
  }
  const protectedGround=plan.ground?.length?groundProtection(map,locks):null;
  for(const b of (plan.ground||[]).slice().sort((a,b)=>b.z-a.z)){
   if(protectedGround(b.x,b.y)||W.groundAt(map,b.x,b.y)!==b.z)continue;
-  if(W.digGround(map,b.x,b.y,.5))count++;
+  if(W.digGround(map,b.x,b.y,.5)){if(changes)changes.ground++;count++}
  }
  const ids=new Set(plan.objects.map(o=>o.id));
- if(ids.size){const before=map.objects.length;map.objects=map.objects.filter(o=>!ids.has(o.id)||o.type!=='block'||o.locked||o.protected||locks.has(o.group));count+=before-map.objects.length}
+ if(ids.size){const before=map.objects.length;map.objects=map.objects.filter(o=>{const keep=!ids.has(o.id)||o.type!=='block'||o.locked||o.protected||locks.has(o.group);if(!keep)changes?.objects.push(o.id);return keep});count+=before-map.objects.length}
  return count;
 }
 // Preserve impact order and the per-impact removal/protection rules while
 // letting the editor commit one transaction for simultaneous hits.
 export function applyImpactBatch(map,impacts,W,beforeChange=()=>{}){
- let changed=false,count=0,protectedCount=0,resistedCount=0,limited=0,destructive=0;
+ let changed=false,count=0,protectedCount=0,resistedCount=0,limited=0,destructive=0;const changes={voxels:[],objects:[],ground:0};
  for(const {point,item} of impacts){
   if(item.destroy===false)continue;
   destructive++;const plan=planImpact(map,point,item,W);
   if(plan.voxels.length||plan.objects.length||plan.ground.length){
    if(!changed){beforeChange();changed=true}
-   count+=applyImpact(map,plan,W);
+   count+=applyImpact(map,plan,W,changes);
   }
   protectedCount+=plan.protectedCount;resistedCount+=plan.resistedCount;limited+=Number(plan.limited);
  }
- return {changed,count,protectedCount,resistedCount,limited,destructive};
+ return {changed,count,protectedCount,resistedCount,limited,destructive,changes};
 }
 function impactLayers(config){
  return config.layers.filter(l=>l.enabled).map(layer=>({id:layer.id,delay:layer.delay,duration:layer.duration,config:{...config,id:layer.kind,color:layer.color,shape:layer.shape,strength:layer.strength,radius:config.radius*layer.size,duration:layer.duration}}));

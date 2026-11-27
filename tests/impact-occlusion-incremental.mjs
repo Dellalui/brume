@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import * as W from '../dist/world.mjs';
+import {blockObject} from '../dist/construction.mjs';
+import {buildBlockOcclusion,createChunkOcclusionCache} from '../dist/block-occlusion.mjs';
+import {applyImpactBatch} from '../dist/throw-effects.mjs';
+const m=W.newMap('blast-index','Blast index',128,64);W.prepareBlocks(m);m.objects=[];
+for(let x=4;x<116;x++)for(let y=12;y<21;y++)for(let z=0;z<5;z++)W.setBlock(m,x,y,z,'stone');
+m.objects.push(blockObject('glass',15,16,5,2,1,1,0,'target'),blockObject('stone',31,12,0,3,2,2,0,'wide'));
+m.objects.push({...blockObject('stone',18,17,5,1,1,1,0,'protected'),locked:true});
+const cache=createChunkOcclusionCache();let epoch=1;
+const check=()=>assert.deepEqual(cache.collect(m,{epoch}),buildBlockOcclusion(m),'exact parity with full rebuild');
+check();const initial=cache.stats();
+function explode(point,power){
+ let token;const result=applyImpactBatch(m,[{point,item:{power}}],W,()=>token=cache.beginRemoval(m,epoch));
+ assert(result.changed);m.buildRevision=(m.buildRevision||0)+1;epoch++;
+ assert(cache.finishRemoval(m,epoch,token,result.changes),'known destructive mutation uses local cache update');
+ check();return result;
+}
+const first=explode({x:16,y:16.5,z:4.8},4);
+assert(first.changes.voxels.length>0);assert(first.changes.objects.includes('target'));assert(!first.changes.objects.includes('protected'));
+const after=cache.stats();assert.equal(after.occlusionIndexBuilds,initial.occlusionIndexBuilds);assert.equal(after.occlusionRemovalUpdates,1);assert(after.occlusionChunkHits>initial.occlusionChunkHits);assert(after.occlusionInvalidatedChunks<initial.occlusionChunkBuilds,'remote sectors keep their occlusion variants');
+explode({x:32,y:16,z:1},5);explode({x:17,y:16,z:0},4);
+assert.equal(cache.stats().occlusionIndexBuilds,initial.occlusionIndexBuilds);
+const region={chunks:new Set(['0,0','1,0','0,1','1,1']),cell:(x,y)=>x>=0&&x<32&&y>=0&&y<32,object:o=>{const b=W.bounds(o);return b.x<32&&b.y<32&&b.x+b.w>=0&&b.y+b.h>=0}};
+assert.deepEqual(cache.collect(m,{region,objects:m.objects.filter(o=>region.object(o)),epoch}),buildBlockOcclusion(m,{region}));
+const token=cache.beginRemoval(m,epoch);W.setBlock(m,110,12,5,'glass');m.buildRevision++;epoch++;
+assert(!cache.finishRemoval(m,epoch,token,{voxels:[],objects:[],ground:0}),'untracked edits require full rebuild');check();assert.equal(cache.stats().occlusionIndexBuilds,initial.occlusionIndexBuilds+1);
+const floating=blockObject('stone',100,15,0,1,1,1,0,'floating');delete floating.baseZ;m.objects.push(floating);m.buildRevision++;epoch++;check();
+assert.equal(cache.beginRemoval(m,epoch),null,'terrain-relative placed elevation falls back safely');
+console.log('PASS: exact local destruction occlusion, boundary and ground edits, placed blocks, protected blocks, remote cache reuse and conservative fallbacks.');
