@@ -384,7 +384,7 @@ let inventoryKey='';
 function filteredInventory(){const q=normalizeSearch(inventoryQuery);return inventoryEntries().filter(item=>normalizeSearch(C.itemName(item,world)+' '+(item.variant||'')).includes(q)).map(canvasItem)}
 function renderInventory(){
  const forms=$('#creativeForms');forms.hidden=!inventoryOpen||!['zone','settings'].includes(creativeCategory);
- $('#creativeSettings').hidden=creativeCategory!=='settings';$('#zoneTools').hidden=creativeCategory!=='zone';$('#schemaTools').hidden=true;
+ $('#creativeSettings').hidden=creativeCategory!=='settings';$('#zoneTools').hidden=creativeCategory!=='zone';
  if(inventoryOpen&&creativeCategory==='settings')renderHeldLiquid();
  canvasHUD?.schedule();
 }
@@ -471,7 +471,7 @@ $('#heldShape').onchange=e=>{heldItem().shape=e.target.value;queueSave();creativ
 $('#throwPower').oninput=e=>setText($('#throwRadius'),e.target.value+' cases de rayon');$('#throwPower').onchange=e=>{const item=heldItem();if(item?.kind==='throw'){item.power=throwConfig({...item,power:Number(e.target.value)}).power;queueSave();creativePreview()}};$('#throwDestroy').onchange=e=>{const item=heldItem();if(item?.kind==='throw'){item.destroy=e.target.checked;queueSave()}};$('#throwVisualScale').oninput=e=>setText($('#throwVisualScaleValue'),Math.round(Number(e.target.value)*100)+' %');$('#throwVisualScale').onchange=e=>{const item=heldItem();if(item?.kind==='throw'){item.visualScale=throwConfig({...item,visualScale:Number(e.target.value)}).visualScale;queueSave()}};$('#throwVisualQuality').onchange=e=>{const item=heldItem();if(item?.kind==='throw'){item.visualQuality=e.target.value==='high'?'high':'auto';queueSave()}};
 $('#returnToMJ').onclick=()=>setView('mj');
 function equipZone(){assignSlot({kind:'selection',name:'Baguette de zone'});creativeCategory='zone';toggleInventory(false);inventoryKey='';renderInventory();captureCreative()}
-$('#equipZone').onclick=equipZone;$('#selectSchemaZone').onclick=equipZone;$('#saveSchema').onclick=saveCreativeSchema;$('#groupSelection').onclick=groupCreativeZone;
+$('#equipZone').onclick=equipZone;$('#saveSchema').onclick=saveCreativeSchema;$('#groupSelection').onclick=groupCreativeZone;
 $('#clearCreativeZone').onclick=()=>{creativeZone=creativeZoneA=creativeZoneB=null;drawBrush=null;$('#creativeZoneInfo').textContent='Aucune zone sélectionnée.';schedule()};
 for(const[id,key]of [['creativeZoneZ','z'],['creativeZoneH','h']])$('#'+id).onchange=e=>{const value=Number(e.target.value);if(!creativeZone||!Number.isFinite(value)||key==='h'&&(value<.1||value>48)||key==='z'&&(value< -16||value>32))return;creativeZone[key]=C.snap(value);drawBrush={...creativeZone,zone:true};$('#creativeZoneInfo').textContent=`${creativeZone.w} × ${creativeZone.d} · base ${creativeZone.z} · hauteur ${creativeZone.h}`;schedule()};
 
