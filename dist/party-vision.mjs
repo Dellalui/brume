@@ -14,7 +14,7 @@ export function createPartyVisionCache(perceive=W.perception){
    if(!entry||entry.key!==key){
     entries.delete(a.id);
     if(recomputed>0&&performance.now()-start>=budgetMs){pending=true;continue}
-    const tiles=new Map(),p=W.center(a),range=a.vision?.range||12,r=Math.max(a.vision?.near??3.5,Math.min(range+12,a.vision?.far??range+6));
+    const tiles=new Map(),p=W.center(a),range=a.vision?.range||12,r=Math.max(a.vision?.near??3.5,Math.max(range,Math.min(96,a.vision?.far??64)));
     for(let x=Math.max(0,Math.floor(p.x-r-1));x<Math.min(map.width,Math.ceil(p.x+r+1));x++)for(let y=Math.max(0,Math.floor(p.y-r-1));y<Math.min(map.height,Math.ceil(p.y+r+1));y++){
      if(Math.hypot(x+.5-p.x,y+.5-p.y)>r+1)continue;
      tiles.set(W.cellKey(x,y),perceive(map,a,x,y,lights));
