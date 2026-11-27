@@ -59,3 +59,29 @@ export function selectLocalLights(sources,anchor,viewer,previous=[],limit=8){
  const score=s=>Math.hypot(s.x-viewer.x,s.y-viewer.y)-(s.radius||0)-(old.has(id(s))?2:0);
  if(limit<=0)return [];return [...(stable?[stable]:[]),...topLights(sources,limit-(stable?1:0),s=>s&&s!==stable&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0,score,id,(a,b)=>a.score-b.score||a.tie.localeCompare(b.tie))];
 }
+
+// Keep the original shadow resolutions and light budgets. Only refresh
+// shadow maps whose light volume intersects changed caster bounds.
+// Directional shadows conservatively include every local caster change.
+export function createLocalShadowQueue({interval=32,maxUploadDelay=24}={}){
+ const pending=new Map(),last=new Map();
+ let updates=0;
+ function mark(spheres,sun,points,now){
+  if(!spheres.length)return;
+  const add=l=>{if(l.castShadow&&!pending.has(l))pending.set(l,now)};
+  add(sun);
+  for(const l of points)if(l.castShadow&&spheres.some(s=>!l.distance||s.center.distanceToSquared(l.position)<=(s.radius+l.distance)**2))add(l);
+ }
+ function take(now,uploading=false){
+  for(const l of pending.keys())if(!l.castShadow)pending.delete(l);
+  let selected=null,oldest=Infinity;
+  for(const [l,since]of pending){
+   if(now-(last.get(l)??-Infinity)<interval)continue;
+   if(uploading&&now-since<maxUploadDelay)continue;
+   if(since<oldest){oldest=since;selected=l}
+  }
+  if(selected){pending.delete(selected);last.set(selected,now);updates++}
+  return selected;
+ }
+ return {mark,take,satisfy(light,now){pending.delete(light);last.set(light,now)},clear(){pending.clear();last.clear()},get size(){return pending.size},stats:()=>({localShadowUpdates:updates,localShadowPending:pending.size})};
+}
