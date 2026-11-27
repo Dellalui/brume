@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import * as T from '../dist/vendor/three.module.min.js';
+import {createOpticalEffects} from '../dist/optical-effects.mjs';
+import {createImpactBodies} from '../dist/impact-bodies.mjs';
+import {SHAPES} from '../dist/effect-recipes.mjs';
+const optical=createOpticalEffects(),camera=new T.PerspectiveCamera(),world=new T.Scene(),calls=[];let target=null,disposed=0;
+const gpu={autoClear:true,shadowMap:{autoUpdate:true},info:{autoReset:true,reset(){}},getDrawingBufferSize(v){v.set(800,600)},copyFramebufferToTexture(t){target=t;if(!t.userData.test){t.userData.test=true;t.addEventListener('dispose',()=>disposed++)}},render(s,c){calls.push({scene:s,auto:this.autoClear})}};
+optical.render(gpu,world,camera);assert.equal(calls.length,1);assert.equal(target,null);
+const lens=optical.create('blackhole','#ffba88');lens.update({x:2,y:2,z:1},3,1,8,1,camera);calls.length=0;optical.render(gpu,world,camera);
+assert.equal(calls.length,2);assert.equal(calls.filter(c=>c.scene===world).length,1,'the world is rendered only once');assert(target.isFramebufferTexture);assert.equal(calls[1].auto,false);assert.equal(gpu.autoClear,true);assert.equal(gpu.info.autoReset,true);assert.equal(gpu.shadowMap.autoUpdate,true);
+assert.equal(lens.mesh.material.uniforms.blackHole.value,1);assert.equal(lens.mesh.material.uniforms.sceneColor.value,target);
+lens.dispose();calls.length=0;optical.render(gpu,world,camera);assert.equal(calls.length,1);assert.equal(disposed,1,'unused framebuffer released');optical.dispose();
+const bodies=createImpactBodies(),geometry=new Set();for(const shape of SHAPES){const effect=bodies.create('fire','low',shape.id,'#00ff00');effect.update(.2,3);const core=effect.group.getObjectByName('Noyau turbulent 3D');geometry.add(core.geometry);assert(core.geometry.attributes.position.array.every(Number.isFinite));assert.equal(core.material.uniforms.hotColor.value.getHexString(),'00ff00');effect.dispose()}assert.equal(geometry.size,7);bodies.dispose();
+console.log('PASS: background-sampling lenses, framebuffer color copy with preserved depth, one world render, GPU state restore, framebuffer release and seven distinct shape geometries.');

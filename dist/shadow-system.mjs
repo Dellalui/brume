@@ -40,3 +40,12 @@ export function selectSceneLights(sources,anchor,limit=8){
 
 // Four 256px point-shadow atlases use the nominal texel count of one 512px atlas.
 export function pointShadowBudget(shadows,quality){return shadows?(quality===1?2:4):8}
+
+// Keep the shadow owner stable, but reserve the other slots for illumination
+// near the viewer. A small score advantage retains sources around a boundary.
+export function selectLocalLights(sources,anchor,viewer,previous=[],limit=8){
+ const stable=selectSceneLights(sources,anchor,1)[0];
+ const id=s=>[s.owner,s.x,s.y,s.z,s.secondary].join('|'),old=new Set(previous.map(id));
+ const score=s=>Math.hypot(s.x-viewer.x,s.y-viewer.y)-(s.radius||0)-(old.has(id(s))?2:0);
+ return [...(stable?[stable]:[]),...sources.filter(s=>s!==stable&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0).sort((a,b)=>score(a)-score(b)||id(a).localeCompare(id(b))).slice(0,limit-(stable?1:0))];
+}

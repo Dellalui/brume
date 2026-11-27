@@ -1,12 +1,18 @@
 // Fictional construction-mode projectiles. No per-frame physics or world mutation.
-export const PRESETS=Object.freeze([{"id":"blast","name":"Explosion classique","color":"#ffb25c","symbol":"✹"},{"id":"fire","name":"Explosion de feu","color":"#ff6230","symbol":"✦"},{"id":"ice","name":"Explosion de givre","color":"#9cdeff","symbol":"❋"},{"id":"storm","name":"Décharge de foudre","color":"#d6edff","symbol":"ϟ"},{"id":"arcane","name":"Explosion arcanique","color":"#c08aff","symbol":"✧"},{"id":"dust","name":"Impact de poussière","color":"#c2a581","symbol":"◉"}].map(Object.freeze));
-export const MAX_RADIUS=6,MAX_REMOVALS=512,MAX_THROWS=3,IMPACT_MS=3000;
+import {RECIPE_PRESETS,normalizeLayers,recipeDuration} from './effect-recipes.mjs';
+export const PRESETS=RECIPE_PRESETS;
+export const MAX_RADIUS=6,MAX_REMOVALS=512,IMPACT_MS=3000;
 export function throwConfig(item){
  const preset=PRESETS.find(p=>p.id===item?.preset)||PRESETS[0];
  const power=Number.isFinite(Number(item?.power))?Math.max(1,Math.min(MAX_RADIUS,Math.round(Number(item.power)))):3;
  const visualScale=Number.isFinite(Number(item?.visualScale))?Math.max(.75,Math.min(2,Number(item.visualScale))):1.25;
- return {...preset,power,radius:power,destroy:item?.destroy!==false,visualScale,visualQuality:item?.visualQuality==='high'?'high':'auto'};
+ const range=Number.isFinite(Number(item?.range))?Math.max(0,Number(item.range)):48;
+ const speed=Number.isFinite(Number(item?.speed))?Math.max(.1,Math.min(300,Number(item.speed))):30;
+ const layers=normalizeLayers(item?.layers??preset.layers);
+ return {...preset,name:String(item?.name||preset.name),power,radius:power,destroy:item?.destroy!==false,visualScale,range,speed,layers,duration:recipeDuration(layers),visualQuality:item?.visualQuality==='high'?'high':'auto'};
 }
+export function throwDistance(from,to){return Math.hypot(to.x-from.x,to.y-from.y,to.z-from.z)}
+export function inThrowRange(from,to,item){const range=throwConfig(item).range;return range===0||throwDistance(from,to)<=range+1e-6}
 export function distanceToBox(point,x,y,z,w,d,h,angle=0){
  const dx=point.x-x-w/2,dy=point.y-y-d/2,c=Math.cos(angle),s=Math.sin(angle);
  const lx=dx*c+dy*s,ly=-dx*s+dy*c;
@@ -65,16 +71,22 @@ export function createThrowQueue(){
  let items=[],serial=0;
  return {
   launch(map,enabled,from,to,item,W,now){
-   if(!enabled||!validImpact(map,to,W)||![from?.x,from?.y,from?.z,now].every(Number.isFinite)||items.length>=MAX_THROWS)return false;
-   const distance=Math.hypot(to.x-from.x,to.y-from.y,to.z-from.z);
-   const duration=Math.max(140,Math.min(450,distance*34));
-   items.push({id:'throw-'+(++serial),map,from:{...from},to:{x:to.x,y:to.y,z:to.z},config:throwConfig(item),started:now,duration,impactAt:null});return true;
+   if(!enabled||!validImpact(map,to,W)||![from?.x,from?.y,from?.z,now].every(Number.isFinite)||!inThrowRange(from,to,item))return false;
+   const config=throwConfig(item),duration=Math.max(16,throwDistance(from,to)/config.speed*1000);
+   items.push({id:'throw-'+(++serial),map,from:{...from},to:{x:to.x,y:to.y,z:to.z},config,started:now,duration,impactAt:null});return true;
   },
   advance(map,enabled,now,onImpact){
    if(!enabled){items=[];return []}
-   items=items.filter(p=>p.map===map&&(p.impactAt===null||now-p.impactAt<IMPACT_MS));
-   for(const p of items)if(p.impactAt===null&&now>=p.started+p.duration){p.impactAt=now;onImpact(p.to,{preset:p.config.id,power:p.config.power,destroy:p.config.destroy})}
-   return items.map(p=>({id:p.id,config:p.config,position:p.impactAt===null?flightPosition(p.from,p.to,(now-p.started)/p.duration):p.to,tail:p.impactAt===null?flightPosition(p.from,p.to,(now-p.started)/p.duration-.15):p.to,phase:p.impactAt===null?'flight':'impact',age:p.impactAt===null?0:(now-p.impactAt)/1000}));
+   items=items.filter(p=>p.map===map);
+   const visible=[];
+   for(const p of items){
+    if(p.impactAt===null&&now>=p.started+p.duration){p.impactAt=p.started+p.duration;onImpact(p.to,{preset:p.config.id,power:p.config.power,destroy:p.config.destroy})}
+    if(p.impactAt===null){visible.push({id:p.id,config:p.config,position:flightPosition(p.from,p.to,(now-p.started)/p.duration),tail:flightPosition(p.from,p.to,(now-p.started)/p.duration-.15),phase:'flight',age:0});continue}
+    const age=(now-p.impactAt)/1000;
+    for(const layer of p.config.layers){const elapsed=age-layer.delay;if(!layer.enabled||elapsed<0||elapsed>=layer.duration)continue;visible.push({id:p.id+':'+layer.id,config:{...p.config,id:layer.kind,color:layer.color,shape:layer.shape,strength:layer.strength,radius:p.config.radius*layer.size,duration:layer.duration},position:p.to,tail:p.to,phase:'impact',age:elapsed})}
+   }
+   items=items.filter(p=>p.impactAt===null||now-p.impactAt<p.config.duration*1000);
+   return visible;
   },
   clear(){items=[]},get size(){return items.length}
  };

@@ -8,7 +8,7 @@ const dest={x:9,y:2,z:0};assert.deepEqual(W.findPath(state.map,collisionObject(a
 msg=sync.prepare(m);assert.deepEqual(Object.keys(msg),['revision']);
 W.setBlock(m,4,2,0,'stone');msg=sync.prepare(m);assert(!msg.init);assert.deepEqual(Object.keys(msg.deltas.blocks.set),['4,2']);state=applyPathSync(state,structuredClone(msg));assert.deepEqual(W.findPath(state.map,collisionObject(a),dest),W.findPath(m,a,dest));
 W.setBlock(m,4,2,0,null);msg=sync.prepare(m);assert.deepEqual(msg.deltas.blocks.remove,['4,2']);state=applyPathSync(state,structuredClone(msg));
-a.x=3;msg=sync.prepare(m);assert(msg.update.objects&&!msg.init);state=applyPathSync(state,structuredClone(msg));assert.equal(state.map.objects[0].x,3);
+a.x=3;msg=sync.prepare(m);assert.deepEqual(msg.objectDelta.set.map(o=>o.id),['a']);assert(!msg.update.objects&&!msg.init);state=applyPathSync(state,structuredClone(msg));assert.equal(state.map.objects[0].x,3);
 const url=new URL('../dist/path-worker.mjs',import.meta.url).href;
 const worker=new Worker(`const {parentPort}=require('node:worker_threads');global.self={postMessage:data=>parentPort.postMessage(data)};import(${JSON.stringify(url)}).then(()=>{parentPort.on('message',data=>self.onmessage({data}));parentPort.postMessage({ready:true})});`,{eval:true});
 try{await new Promise((resolve,reject)=>{worker.once('message',resolve);worker.once('error',reject)});

@@ -3,13 +3,15 @@ import {BatchedRenderer,ParticleSystem,ConstantValue,IntervalValue,ConstantColor
 import {createLightning} from './lightning.mjs';
 // All ambient and spell effects use Quarks for emission, lifetime, evolution and batching.
 export function createParticleEffect(e,texture){
- const group=new T.Group(),batch=new BatchedRenderer(),systems=[],materials=[],kind=e.kind,size=Math.max(.2,e.size||1),density=Math.min(3,Math.max(.2,e.density||1))*(e.quality==='low'?.45:e.quality==='high'?1:.7),speed=Math.min(3,Math.max(.1,e.speed||1)),tint=new T.Color(e.color||'#c5daef');
+ const group=new T.Group(),batch=new BatchedRenderer(),systems=[],materials=[],kind=e.kind,size=Math.max(.2,e.size||1),density=Math.min(3,Math.max(.2,e.density||1))*(e.quality==='low'?.45:e.quality==='high'?1:.7),speed=Math.min(e.kind?.startsWith('blast_')?30:3,Math.max(.001,e.speed||1)),tint=new T.Color(e.color||'#c5daef');
  group.name='Quarks · '+kind;batch.matrixAutoUpdate=false;batch.matrixWorldAutoUpdate=false;group.add(batch);let attenuation=1,clock=0;
  const vector=c=>new T.Vector3(c.r,c.g,c.b),white=new T.Vector3(1,1,1),colored=vector(tint);
  function emitter(style){return{type:'BrumesEmitter',update(){},initialize(p){let angle=Math.random()*Math.PI*2,r=Math.sqrt(Math.random()),r2=.1+Math.random()*.9;p.position.set(Math.cos(angle)*r*size,0,Math.sin(angle)*r*size);p.velocity.set(0,p.startSpeed,0);p.vfxPhase=angle;p.vfxRadius=r;p.vfxSeed=Math.random();
  if(style==='cloud'){p.position.y=Math.random()*.22*size;p.velocity.set((Math.random()-.5)*.15*size,p.startSpeed,(Math.random()-.5)*.15*size)}
  if(style==='fall'){if(kind==='waterfall'){p.position.x*=.35;p.position.z*=.08}p.position.y=3.5*size;p.velocity.y=-p.startSpeed;p.velocity.x=kind==='snow'?.12*size:.15*size}
+ if(style==='implode'){const up=Math.random()*2-1,radius=Math.sqrt(1-up*up);p.position.set(Math.cos(angle)*radius,up,Math.sin(angle)*radius).multiplyScalar(size*1.6);p.velocity.copy(p.position).normalize().multiplyScalar(-p.startSpeed)}
  if(style==='burst'){const up=Math.random()*2-1,radius=Math.sqrt(1-up*up);p.position.set(0,0,0);p.velocity.set(Math.cos(angle)*radius*p.startSpeed,up*p.startSpeed,Math.sin(angle)*radius*p.startSpeed)}
+ if(['burst','implode'].includes(style)){if(['ring','disc'].includes(e.shape)){p.velocity.y=0;p.position.y=0}else if(e.shape==='cone'){p.velocity.y=Math.abs(p.velocity.y)+p.startSpeed*.5;p.velocity.x*=.45;p.velocity.z*=.45}else if(e.shape==='column'){p.velocity.x*=.35;p.velocity.z*=.35;p.velocity.y=Math.abs(p.velocity.y)*1.8}else if(e.shape==='dome')p.velocity.y=Math.abs(p.velocity.y)}
  if(style==='spray'){p.position.multiplyScalar(.12);p.velocity.set(Math.cos(angle)*r2*p.startSpeed,p.startSpeed*(.5+Math.random()),Math.sin(angle)*r2*p.startSpeed)}
  if(style==='rise'){p.position.multiplyScalar(.22);p.velocity.x=(Math.random()-.5)*.15*size;p.velocity.z=(Math.random()-.5)*.15*size}
  if(style==='orbit'){p.position.y=Math.random()*size*1.8;p.velocity.set(0,0,0)}
@@ -41,6 +43,15 @@ export function createParticleEffect(e,texture){
  case 'blast_arcane':
   layer({style:'burst',tex:'spark',burst:46,life:[.35,1.2],width:[.04,.12],velocity:[.7,2.2],alpha:.9,colors:[[white,0],[colored,.3],[colored,1]]});
   layer({style:'burst',tex:'soft',burst:24,life:[.4,1.35],width:[.12,.32],velocity:[.35,1.4],alpha:.35,grow:[.2,1,1.3,0]});break;
+ case 'blast_toxic':
+  layer({style:'spray',tex:'soft',burst:26,life:[.4,1.15],width:[.045,.1],velocity:[.4,1.2],alpha:.65,colors:[[white,0],[colored,.2],[colored,1]]});
+  layer({style:'burst',tex:'cloud',burst:16,life:[.6,1.45],width:[.25,.5],velocity:[.25,.7],additive:false,alpha:.3,grow:[.2,.8,1.2,1.7]});break;
+ case 'blast_holy':
+  layer({style:'burst',tex:'cross',burst:24,life:[.35,1.1],width:[.045,.1],velocity:[.7,1.8],alpha:.85,colors:[[white,0],[colored,1]]});
+  layer({style:'burst',tex:'streak',burst:28,life:[.25,.7],width:[.025,.06],velocity:[1.2,2.8],stretch:4,alpha:.8});break;
+ case 'blast_void':
+  layer({style:'implode',tex:'streak',burst:36,life:[.45,1.2],width:[.035,.075],velocity:[1,1.4],alpha:.9,stretch:3,colors:[[colored,0],[white,1]]});
+  layer({style:'implode',tex:'soft',burst:14,life:[.4,1.1],width:[.09,.18],velocity:[1.1,1.4],alpha:.4});break;
  case 'blast_dust':
   layer({style:'burst',tex:'cloud',burst:28,life:[.65,1.45],width:[.2,.45],velocity:[.3,1.25],additive:false,alpha:.48,grow:[.3,.9,1.4,2]});
   layer({style:'burst',tex:'soft',burst:26,life:[.28,.8],width:[.04,.11],velocity:[.9,2.0],additive:false,alpha:.6});break;

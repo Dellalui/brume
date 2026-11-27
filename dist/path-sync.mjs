@@ -20,8 +20,8 @@ export function createPathSync(){
    staticObjects=map.objects.filter(o=>!W.character(o)).map(collisionObject).filter(o=>o.blocking||o.type==='block'||o.type==='platform'||o.type==='balcony');
    staticKey=key;
   }
-  const objects=[...staticObjects,...map.objects.filter(W.character).map(collisionObject)],objectsKey=encode(objects),full=map!==mapRef||!prev;
-  if(full){mapRef=map;prev={fields:staticFields,objectsKey};return {revision:++revision,init:{...staticFields,objects}}}
+  const objects=[...staticObjects,...map.objects.filter(W.character).map(collisionObject)],objectMap=new Map(objects.map(o=>[o.id,o])),full=map!==mapRef||!prev;
+  if(full){mapRef=map;prev={fields:staticFields,objects:objectMap};return {revision:++revision,init:{...staticFields,objects}}}
   const update={},deltas={};
   if(staticFields!==prev.fields){
    for(const [k,v]of Object.entries(staticFields))if(!DICTS.includes(k)&&encode(v)!==encode(prev.fields[k]))update[k]=v;
@@ -32,18 +32,21 @@ export function createPathSync(){
     const delta=dictDelta(old,next);if(hasDelta(delta))deltas[k]=delta;
    }
   }
-  if(objectsKey!==prev.objectsKey)update.objects=objects;
-  prev={fields:staticFields,objectsKey};
-  if(Object.keys(update).length||Object.keys(deltas).length)return {revision:++revision,update,deltas};
+  const objectDelta={set:[],remove:[]};
+  for(const [id,o]of objectMap){const old=prev.objects.get(id);if(old!==o&&encode(old)!==encode(o))objectDelta.set.push(o)}
+  for(const id of prev.objects.keys())if(!objectMap.has(id))objectDelta.remove.push(id);
+  prev={fields:staticFields,objects:objectMap};
+  if(Object.keys(update).length||Object.keys(deltas).length||objectDelta.set.length||objectDelta.remove.length)return {revision:++revision,update,deltas,objectDelta};
   return {revision};
  }};
 }
 export function applyPathSync(state,msg){
  if(msg.init)return {map:msg.init,revision:msg.revision};
  if(!state||msg.revision<state.revision)throw Error('Collision snapshot missing or stale');
- if(!msg.update&&!msg.deltas){if(msg.revision!==state.revision)throw Error('Collision revision mismatch');return state}
+ if(!msg.update&&!msg.deltas&&!msg.objectDelta){if(msg.revision!==state.revision)throw Error('Collision revision mismatch');return state}
  if(msg.revision!==state.revision+1)throw Error('Collision delta missing');
  const map={...state.map,...msg.update};
+ if(msg.objectDelta){const objects=new Map(map.objects.map(o=>[o.id,o]));for(const id of msg.objectDelta.remove)objects.delete(id);for(const o of msg.objectDelta.set)objects.set(o.id,o);map.objects=[...objects.values()]}
  for(const [k,d]of Object.entries(msg.deltas||{})){const next={...map[k]};for(const id of d.remove)delete next[id];Object.assign(next,d.set);map[k]=next}
  return {map,revision:msg.revision};
 }

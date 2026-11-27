@@ -156,6 +156,7 @@ export function readSavedWorld(storage){
   let world=raw?JSON.parse(raw):migrate(JSON.parse(storage.getItem('brumes-v1')));
   if(!world||world.version!==4||!Array.isArray(world.maps)||!world.maps.length)throw Error('Structure du monde invalide');
   const ids=new Set(),record=v=>!!v&&typeof v==='object'&&!Array.isArray(v);
+  if(world.throwPresets!==undefined&&(!Array.isArray(world.throwPresets)||world.throwPresets.some(p=>!record(p)||typeof p.id!=='string'||!Array.isArray(p.layers))))throw Error('Presets d’effets invalides');
   if(world.schematics!==undefined&&(!Array.isArray(world.schematics)||world.schematics.some(s=>!record(s)||!Array.isArray(s.objects))))throw Error('Schémas invalides');
   if(world.builder!==undefined&&(!record(world.builder)||!Array.isArray(world.builder.slots)||world.builder.slots.length!==9||world.builder.slots.some(s=>!record(s))))throw Error('Inventaire invalide');
   for(const m of world.maps){
