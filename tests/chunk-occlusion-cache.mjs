@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import * as W from '../dist/world.mjs';
+import {blockObject} from '../dist/construction.mjs';
+import {buildBlockOcclusion,createChunkOcclusionCache} from '../dist/block-occlusion.mjs';
+const map=W.newMap('occ','Occlusion seams',192,96);W.prepareBlocks(map);map.objects=[];
+for(let x=12;x<84;x++)for(let y=14;y<21;y++)for(let z=0;z<4;z++)W.setBlock(map,x,y,z,'stone');
+W.setBlock(map,31,17,4,'glass');W.setBlock(map,32,17,4,'stone',.5);
+map.objects.push(blockObject('stone',30.5,12,0,3,2,2,0,'wide'),blockObject('stone',48,14,4,1,1,1,Math.PI/2,'turned'),blockObject('glass',16,17,4,1,1,1,0,'glass'),blockObject('stone',63.5,17,4,2,1,1,.3,'rotated'));
+map.objects.push({...blockObject('stone',47,17,4,1,1,1,0,'secret'),secret:true});
+const makeRegion=ids=>{const chunks=new Set(ids);return{chunks,cell:(x,y)=>chunks.has(Math.floor(x/16)+','+Math.floor(y/16)),object(o){const b=W.bounds(o);for(let y=Math.floor(b.y/16);y<=Math.floor((b.y+b.h)/16);y++)for(let x=Math.floor(b.x/16);x<=Math.floor((b.x+b.w)/16);x++)if(chunks.has(x+','+y))return true;return false}}};
+const region=(from,to)=>makeRegion(Array.from({length:to-from+1},(_,i)=>[from+i+',0',from+i+',1']).flat());
+const a=region(0,3),b=region(1,4),c=region(2,5),cache=createChunkOcclusionCache();
+const verify=(r,epoch=1,slice=32,mode='mj')=>{
+ const options={region:r,slice,mode},objects=r?map.objects.filter(o=>r.object(o)):map.objects;
+ const expected=buildBlockOcclusion(map,options),actual=cache.collect(map,{...options,objects,epoch});
+ assert.deepEqual(actual,expected,'exact hidden voxel/object and face membership parity');
+ return cache.stats();
+};
+const initial=verify(a),moved=verify(b);assert.equal(moved.occlusionIndexBuilds,initial.occlusionIndexBuilds);assert(moved.occlusionChunkHits>initial.occlusionChunkHits,'overlapping interior sectors reused');
+verify(c);const beforeReturn=cache.stats(),returned=verify(a);assert.equal(returned.occlusionIndexBuilds,initial.occlusionIndexBuilds);assert.equal(returned.occlusionChunkBuilds,beforeReturn.occlusionChunkBuilds,'return to a cached region requires no new sector culling');
+verify(null);verify(b,1,2);verify(b,1,32,'player');
+W.setBlock(map,31,17,2,null);verify(b,2);assert(cache.stats().occlusionIndexBuilds>initial.occlusionIndexBuilds,'edits invalidate cached occlusion');
+const hiddenGroup={id:'hide',visible:false};map.groups.push(hiddenGroup);map.blockGroups??={};map.blockGroups['32,17,2']='hide';verify(b,3);
+hiddenGroup.visible=true;verify(b,3);
+console.log('PASS: cached per-sector occlusion matches reference across translation, seams, partial and placed blocks, slice, secrets, visibility, and edits.');
