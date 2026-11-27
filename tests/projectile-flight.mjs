@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import * as W from '../dist/world.mjs';
+import * as T from '../dist/vendor/three.module.min.js';
+import {blockObject} from '../dist/construction.mjs';
+import {traceProjectile,shotDistance} from '../dist/projectile-collision.mjs';
+import {createThrowQueue,throwConfig,flightTrail} from '../dist/throw-effects.mjs';
+import {createThrowVisuals} from '../dist/throw-visuals.mjs';
+import {createEffects} from '../dist/effects.mjs';
+import {canvasStub} from '../test-support/three-fixture.mjs';
+const m=W.newMap('shot','Directional shot',64,64);W.prepareBlocks(m);m.objects=[];
+const a={x:5.5,y:8.5,z:4.25},dir={x:1,y:0,z:0};
+W.setBlock(m,10,8,4,'glass',.5);W.setBlock(m,15,8,4,'stone');
+let hit=traceProjectile(m,a,{x:20,y:8.5,z:4.25},W);assert.equal(hit.id,'10,8,4');assert(Math.abs(hit.point.x-10)<1e-7);
+assert.equal(traceProjectile(m,{...a,z:4.75},{x:20,y:8.5,z:4.75},W).id,'15,8,4','half height does not block the upper half');
+const q=createThrowQueue(),impacts=[];
+assert(q.fire(m,true,a,dir,{speed:100,range:30,flightStyle:'ribbon',trailLength:12},W,0));
+let v=q.advance(m,true,20,(p,c)=>impacts.push({p,c}),{deferTrails:true});assert.equal(v[0].position.x,7.5);assert.equal(v[0].position.z,a.z);assert.equal(v[0].flightLinear,true);assert.equal(v[0].tail.x,a.x);assert.equal(impacts.length,0);
+W.setBlock(m,10,8,4,null);W.setBlock(m,12,8,4,'glass',.5);
+v=q.advance(m,true,100,(p,c)=>impacts.push({p,c}));assert.equal(impacts.length,1);assert.equal(impacts[0].p.x,12,'collision uses live edited terrain, not launch target');assert(v.every(p=>p.phase==='impact'));q.advance(m,true,200,()=>assert.fail('duplicate impact'));q.clear();
+W.setBlock(m,12,8,4,null);W.setBlock(m,15,8,4,null);
+const placed=blockObject('glass',10,8,4,2,1,.5,.3,'rotated');m.objects.push(placed);m.buildRevision=1;
+hit=traceProjectile(m,a,{x:20,y:8.5,z:4.25},W);assert.equal(hit.id,'rotated');assert(hit.point.x>9&&hit.point.x<12);
+placed.visible=false;assert.equal(traceProjectile(m,a,{x:20,y:8.5,z:4.25},W),null);
+m.objects=[];m.buildRevision++;
+const door={...W.newObject('door',12,7,'door'),x2:12,y2:10,baseZ:3,height:3};m.objects.push(door);m.buildRevision++;
+assert.equal(traceProjectile(m,a,{x:20,y:8.5,z:4.25},W).id,'door');door.open=true;assert.equal(traceProjectile(m,a,{x:20,y:8.5,z:4.25},W),null);
+hit=traceProjectile(m,a,{x:a.x,y:a.y,z:-10},W);assert.equal(hit.kind,'ground');assert(Math.abs(hit.point.z)<1e-7);
+assert(q.fire(m,true,a,{x:0,y:0,z:1},{speed:300,range:10},W,0));assert.equal(q.advance(m,true,100,()=>assert.fail('miss exploded')).length,0);assert.equal(q.size,0);
+assert(shotDistance(m,a,{x:0,y:0,z:1},0)<32);assert(!q.fire(m,true,a,{x:0,y:0,z:0},{},W,0));
+const points=flightTrail(a,{x:25.5,y:a.y,z:a.z},.5,[],{linear:true,length:3});assert(points.every(p=>p.z===a.z));assert(Math.abs(points.at(-1).x-12.5)<1e-7);
+const fx=createEffects(()=>canvasStub(128,128)),visuals=createThrowVisuals(fx),camera=new T.PerspectiveCamera(70,1,.01,100);camera.position.set(5,4.25,8.5);camera.lookAt(15,4.25,8.5);
+for(const style of ['orb','ribbon','beads','bare']){
+ const config=throwConfig({flightStyle:style,flightColor:'#abcdef',trailLength:5,flightSize:2}),position={x:12,y:8.5,z:4.25},tail={x:7,y:8.5,z:4.25};
+ assert(visuals.update([{id:style,config,position,tail,phase:'flight',age:0}],0,camera,'balanced'));
+ const trail=visuals.group.getObjectByName('Projectile trail'),core=visuals.group.getObjectByName('Projectile core');assert(core);assert.equal(core.material.color.getHexString(),'abcdef');
+ if(style==='bare')assert(!trail);else {assert(trail);assert.equal(trail.count,style==='ribbon'?1:style==='beads'?7:7)}
+ visuals.update([],1,camera,'balanced');
+}
+visuals.dispose();fx.dispose();
+console.log('PASS: live directional flight, continuous half-block/rotated/door/ground collisions, miss cleanup, straight trails, four flight styles.');

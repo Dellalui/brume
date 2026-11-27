@@ -55,14 +55,14 @@ function runeGeometry(){const a=[];for(let i=0;i<64;i++){const p=i*Math.PI/32,q=
 // Analytic motion, fixed-size instance buffers and one-shot Quarks accents.
 // The impact effects never change world state or add dynamic shadow maps.
 export function createThrowVisuals(factory){
- const group=new T.Group(),entries=new Map(),plane=new T.PlaneGeometry(1,1),orbGeo=new T.SphereGeometry(1,12,8),shardGeo=new T.OctahedronGeometry(1,0),runeGeo=runeGeometry(),tex={};let bodies=null;const optical=createOpticalEffects(),proxyGeo=new T.IcosahedronGeometry(1,0),proxyMat=new T.MeshBasicMaterial({transparent:true,opacity:.35,depthWrite:false});let proxy=null;
+ const group=new T.Group(),entries=new Map(),plane=new T.PlaneGeometry(1,1),orbGeo=new T.SphereGeometry(1,12,8),beamGeo=new T.CylinderGeometry(1,1,1,8,1,true),shardGeo=new T.OctahedronGeometry(1,0),runeGeo=runeGeometry(),tex={};let bodies=null;const optical=createOpticalEffects(),proxyGeo=new T.IcosahedronGeometry(1,0),proxyMat=new T.MeshBasicMaterial({transparent:true,opacity:.35,depthWrite:false});let proxy=null;
  function texture(kind){return tex[kind]??=makeTexture(kind)}
  // Baked facet colors make crystal and stone fragments visibly three-dimensional
  // even at night, without adding lights or material programs for each effect.
  const normals=shardGeo.attributes.normal,facet=new Float32Array(normals.count*3);
  for(let i=0;i<normals.count;i++){const shade=.42+.58*clamp(normals.getX(i)*.24+normals.getY(i)*.75+normals.getZ(i)*.45);facet.set([shade,shade,shade],i*3)}
  shardGeo.setAttribute('color',new T.BufferAttribute(facet,3));
- const dummy=new T.Object3D(),cameraLocal=new T.Vector3(),cameraWorld=new T.Vector3(),proxyColor=new T.Color(),cameraQ=new T.Quaternion(),frustum=new T.Frustum(),projection=new T.Matrix4(),bounds=new T.Sphere();
+ const dummy=new T.Object3D(),beamDirection=new T.Vector3(),beamUp=new T.Vector3(0,1,0),cameraLocal=new T.Vector3(),cameraWorld=new T.Vector3(),proxyColor=new T.Color(),cameraQ=new T.Quaternion(),frustum=new T.Frustum(),projection=new T.Matrix4(),bounds=new T.Sphere();
  group.name='Impacts cinematiques';
  function basic(color,map=null,add=false){return new T.MeshBasicMaterial({color,map,transparent:true,opacity:1,depthWrite:false,alphaTest:map?.001:0,side:T.DoubleSide,toneMapped:false,blending:add?T.AdditiveBlending:T.NormalBlending})}
  function sprite(color,map,add=false){return new T.Mesh(plane,basic(color,map,add))}
@@ -74,10 +74,11 @@ export function createThrowVisuals(factory){
  }
  function attach(e,o){e.root.add(o);e.materials.add(o.material);return o}
  function prepareFlight(e,p){
-  if(e.trail)return;
-  e.halo=attach(e,sprite(e.profile.flash,texture('halo'),true));e.halo.name='Projectile glow';
-  e.core=attach(e,new T.Mesh(orbGeo,basic('#ffffff',null,true)));
-  e.trail=attach(e,batch(24,orbGeo,basic(p.config.color,null,true)));e.trail.name='Projectile trail';
+  if(e.core)return;
+  const color=p.config.flightColor||p.config.color,style=p.config.flightStyle||'orb';
+  e.halo=attach(e,sprite(color,texture('halo'),true));e.halo.name='Projectile glow';
+  e.core=attach(e,new T.Mesh(orbGeo,basic(color,null,true)));e.core.name='Projectile core';
+  if(style!=='bare'&&(p.config.trailLength??5)>0){e.trail=attach(e,batch(style==='ribbon'?1:24,style==='ribbon'?beamGeo:orbGeo,basic(color,null,true)));e.trail.name='Projectile trail'}
  }
  function prepareImpact(e,p){
   if(e.body)return;
@@ -128,19 +129,30 @@ export function createThrowVisuals(factory){
   list=list.filter(p=>p.phase==='flight'||(p.config.strength??1)>0&&Number.isFinite(p.age)&&p.age<(p.config.duration??IMPACT_MS/1000));
   const active=new Set();camera.updateMatrixWorld();camera.getWorldQuaternion(cameraQ);camera.getWorldPosition(cameraWorld);frustum.setFromProjectionMatrix(projection.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
   const visible=[];
-  for(const p of list){bounds.center.set(p.position.x,p.position.z,p.position.y);bounds.radius=p.config.radius*(p.config.visualScale??1.25)*4+2;if(frustum.intersectsSphere(bounds))visible.push(p)}
+  for(const p of list){bounds.center.set(p.position.x,p.position.z,p.position.y);bounds.radius=Math.max(p.config.radius*(p.config.visualScale??1.25)*4+2,p.phase==='flight'?(p.config.trailLength??5)+2:0);if(frustum.intersectsSphere(bounds))visible.push(p)}
   visible.sort((a,b)=>Math.hypot(a.position.x-camera.position.x,a.position.z-camera.position.y,a.position.y-camera.position.z)-Math.hypot(b.position.x-camera.position.x,b.position.z-camera.position.y,b.position.y-camera.position.z));
   const detailLimit=quality==='low'?16:quality==='high'?32:24,fallback=visible.slice(detailLimit);
   if(fallback.length){if(!proxy||proxy.instanceMatrix.count<fallback.length){if(proxy){group.remove(proxy);proxy.dispose()}proxy=new T.InstancedMesh(proxyGeo,proxyMat,2**Math.ceil(Math.log2(fallback.length)));proxy.name='Impacts simplifiés';proxy.frustumCulled=false}if(proxy.parent!==group)group.add(proxy);proxy.visible=true;proxy.count=fallback.length;
-   for(let i=0;i<fallback.length;i++){const p=fallback[i],progress=p.phase==='flight'?0:p.age/(p.config.duration||3),r=p.config.radius*(p.config.visualScale??1.25),fade=Math.max(.01,Math.sin(progress*Math.PI));dummy.position.set(p.position.x,p.position.z+(p.phase==='flight'?0:r*.35),p.position.y);dummy.rotation.set(0,0,0);dummy.scale.setScalar(p.phase==='flight'?.13:r*fade*.65);dummy.updateMatrix();proxy.setMatrixAt(i,dummy.matrix);proxy.setColorAt(i,proxyColor.set(p.config.id==='blackhole'?'#151024':p.config.color))}proxy.instanceMatrix.needsUpdate=true;proxy.instanceColor.needsUpdate=true;
+   for(let i=0;i<fallback.length;i++){const p=fallback[i],progress=p.phase==='flight'?0:p.age/(p.config.duration||3),r=p.config.radius*(p.config.visualScale??1.25),fade=Math.max(.01,Math.sin(progress*Math.PI));dummy.position.set(p.position.x,p.position.z+(p.phase==='flight'?0:r*.35),p.position.y);dummy.rotation.set(0,0,0);dummy.scale.setScalar(p.phase==='flight'?.13*(p.config.flightSize??1):r*fade*.65);dummy.updateMatrix();proxy.setMatrixAt(i,dummy.matrix);proxy.setColorAt(i,proxyColor.set(p.phase==='flight'?(p.config.flightColor||p.config.color):p.config.id==='blackhole'?'#151024':p.config.color))}proxy.instanceMatrix.needsUpdate=true;proxy.instanceColor.needsUpdate=true;
   }else if(proxy){group.remove(proxy);proxy.count=0;if(proxy.instanceMatrix.count>256){proxy.dispose();proxy=null}}
   for(const p of visible.slice(0,detailLimit)){
    active.add(p.id);let e=entries.get(p.id);if(!e){e=build(p,impactQuality(p.config,quality,visible.length));entries.set(p.id,e)}e.root.visible=true;
    const at=p.position,r=p.config.radius*(p.config.visualScale??1.25),kind=p.config.id,life=p.config.duration??3,a=p.age*3/life;e.root.position.set(at.x,at.z,at.y);cameraLocal.copy(cameraWorld).sub(e.root.position);
    const strength=p.config.strength??1;
    if(p.phase==='flight'){
-    prepareFlight(e,p);e.core.visible=e.halo.visible=e.trail.visible=true;e.core.scale.setScalar(.085+r*.035);billboard(e.halo,.5+r*.19);const points=p.flightFrom?flightTrail(p.flightFrom,p.flightTo,p.flightProgress,e.trailPoints??=[]):p.trail;e.trail.count=points?.length??7;
-    for(let i=0;i<e.trail.count;i++){const t=(i+1)/e.trail.count,q=points?.[i];dummy.position.set(q?q.x-at.x:(p.tail.x-at.x)*t,q?q.z-at.z:(p.tail.z-at.z)*t,q?q.y-at.y:(p.tail.y-at.y)*t);dummy.rotation.set(0,0,0);dummy.scale.setScalar((.12+r*.025)*(1-t*.85));dummy.updateMatrix();e.trail.setMatrixAt(i,dummy.matrix)}e.trail.instanceMatrix.needsUpdate=true;continue;
+    prepareFlight(e,p);const size=p.config.flightSize??1,style=p.config.flightStyle||'orb';e.core.visible=e.halo.visible=true;e.core.scale.setScalar((.085+r*.035)*size);billboard(e.halo,(.5+r*.19)*size);
+    if(e.trail){
+     e.trail.visible=true;
+     if(style==='ribbon'){
+      beamDirection.set(at.x-p.tail.x,at.z-p.tail.z,at.y-p.tail.y);const length=beamDirection.length();e.trail.count=length>1e-5?1:0;
+      if(e.trail.count){dummy.position.copy(beamDirection).multiplyScalar(-.5);dummy.quaternion.setFromUnitVectors(beamUp,beamDirection.normalize());const width=(.035+r*.012)*size;dummy.scale.set(width,length,width);dummy.updateMatrix();e.trail.setMatrixAt(0,dummy.matrix)}
+     }else{
+      const points=p.flightFrom?flightTrail(p.flightFrom,p.flightTo,p.flightProgress,e.trailPoints??=[],{linear:!!p.flightLinear,length:p.config.trailLength??5}):p.trail;e.trail.count=style==='beads'?Math.min(8,points?.length??7):points?.length??7;
+      for(let i=0;i<e.trail.count;i++){const t=(i+1)/e.trail.count,q=points?.[style==='beads'?Math.min(points.length-1,Math.ceil(t*points.length)-1):i];dummy.position.set(q?q.x-at.x:(p.tail.x-at.x)*t,q?q.z-at.z:(p.tail.z-at.z)*t,q?q.y-at.y:(p.tail.y-at.y)*t);dummy.rotation.set(0,0,0);dummy.scale.setScalar((.12+r*.025)*size*(style==='beads'?.85:1-t*.85));dummy.updateMatrix();e.trail.setMatrixAt(i,dummy.matrix)}
+     }
+     e.trail.instanceMatrix.needsUpdate=true;
+    }
+    continue;
    }
    prepareImpact(e,p);if(e.lens)e.lens.update(at,r,p.age,life,strength,camera);
    e.body.update(a,r);if(e.lens||kind==='shockwave')e.body.group.visible=false;
@@ -159,5 +171,5 @@ export function createThrowVisuals(factory){
   for(const [id,e]of entries)if(!active.has(id))remove(id,e);
   return list.length>0;
  }
- return{group,update,render:optical.render,optical,stats:()=>({active:entries.size,simplified:proxy?.count||0,instances:[...entries.values()].reduce((n,e)=>n+e.smokeSeeds.length+e.fireSeeds.length+e.shardSeeds.length+(e.trail?24:0),0)}),dispose(){for(const [id,e]of entries)remove(id,e);if(proxy){group.remove(proxy);proxy.dispose()}proxyGeo.dispose();proxyMat.dispose();optical.dispose();for(const t of Object.values(tex))t.dispose();plane.dispose();orbGeo.dispose();shardGeo.dispose();runeGeo.dispose();bodies?.dispose()}};
+ return{group,update,render:optical.render,optical,stats:()=>({active:entries.size,simplified:proxy?.count||0,instances:[...entries.values()].reduce((n,e)=>n+e.smokeSeeds.length+e.fireSeeds.length+e.shardSeeds.length+(e.trail?.instanceMatrix.count??0),0)}),dispose(){for(const [id,e]of entries)remove(id,e);if(proxy){group.remove(proxy);proxy.dispose()}proxyGeo.dispose();proxyMat.dispose();optical.dispose();for(const t of Object.values(tex))t.dispose();plane.dispose();orbGeo.dispose();beamGeo.dispose();shardGeo.dispose();runeGeo.dispose();bodies?.dispose()}};
 }

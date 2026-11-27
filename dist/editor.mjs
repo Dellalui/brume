@@ -24,7 +24,7 @@ import {movementTarget,stepAltitude} from './movement-target.mjs';
 import {createFrameMeter} from './frame-meter.mjs';
 import {setText,setHidden,setValue,setData,setAttr} from './ui-values.mjs';
 import {expireEffects,launchEffect,effectEnvelope} from './effect-layer.mjs';
-import {THROW_ITEMS,throwConfig,materialHardness,validImpact,applyImpactBatch,createThrowQueue} from './throw-effects.mjs';
+import {THROW_ITEMS,throwConfig,materialHardness,applyImpactBatch,createThrowQueue} from './throw-effects.mjs';
 import {renderer} from './scene.mjs';
 import {rememberInspector,organizeInspector} from './interface.mjs';
 import {mountWorkspace,syncDockState,organizeSceneSettings,applyGraphicsProfile,cameraSnapshot,normalizeSearch} from './workspace-ui.mjs';
@@ -579,7 +579,7 @@ function renderCreative(){
 function creativePreview(e){
  if(!creativeActive())return;if(e)creativeLastEvent={clientX:e.clientX,clientY:e.clientY};const item=heldItem();
  if(inventoryOpen||document.pointerLockElement!==canvas){drawBrush=null;schedule();return}
- if(item?.kind==='throw'){const p=creativePoint(),cfg=throwConfig(item);drawBrush=validImpact(map(),p,W)?{blast:true,x:Math.round(p.x*10)/10,y:Math.round(p.y*10)/10,z:Math.round(p.z*10)/10,radius:cfg.radius,color:cfg.color}:null;schedule();return}
+ if(item?.kind==='throw'){if(drawBrush){drawBrush=null;schedule()}return}
  if(['brush','fogbrush'].includes(item?.kind)){let p=creativePoint(),box=CT.brushBox(p,item,false);drawBrush=box?{...box,zone:true}:null;schedule();return}if(['frame','pipette'].includes(item?.kind)){drawBrush=null;schedule();return}
  if(item?.kind==='selection'){if(creativeZone)drawBrush={...creativeZone,zone:true};schedule();return}if(item?.kind==='inspect'){drawBrush=null;schedule();return}
  const now=Date.now();if(e&&now-creativePreviewTime<45)return;creativePreviewTime=now;
@@ -598,14 +598,16 @@ function syncThrowSettings(item){
  const cfg=throwConfig(item);$('#throwPower').value=String(cfg.power);$('#throwDestroy').checked=cfg.destroy;$('#throwVisualScale').value=String(cfg.visualScale);$('#throwVisualQuality').value=cfg.visualQuality;setText($('#throwVisualScaleValue'),Math.round(cfg.visualScale*100)+' %');setText($('#throwRadius'),cfg.radius+' cases de rayon');setText($('#throwName'),cfg.name);$('#throwRange').value=cfg.range;$('#throwSpeed').value=cfg.speed;renderThrowComposer();
 }
 function renderThrowComposer(){
- throwComposer??=createThrowComposer($('#throwComposer'),{getItem:heldItem,getSaved:()=>world.throwPresets||[],onChange(){queueSave();creativePreview();renderCreative()},onSave(p){remember();world.throwPresets??=[];const id=p.id||uid(),preset={id,name:p.name,layers:structuredClone(p.layers),settings:{...p.settings}},index=world.throwPresets.findIndex(v=>v.id===id);if(index<0)world.throwPresets.push(preset);else world.throwPresets[index]=preset;heldItem().recipeId=id;heldItem().name=p.name;queueSave();inventoryKey='';renderCreative();toast('Preset enregistré dans votre monde.')},onDelete(id){if(!confirm('Supprimer ce preset ? Les créneaux équipés gardent leur copie.'))return;remember();world.throwPresets=(world.throwPresets||[]).filter(p=>p.id!==id);heldItem().recipeId=null;queueSave();inventoryKey='';renderCreative()},onPreview(){const rect=canvas.getBoundingClientRect(),point=scene.world(rect.width/2,rect.height/2),c=scene.debug().camera,from={x:c.position.x,y:c.position.z,z:c.position.y};if(!throwQueue.launch(map(),true,from,point,{...heldItem(),destroy:false},W,performance.now())){toast('Visez le terrain à portée pour prévisualiser.');return}schedule()}});throwComposer.render();
+ throwComposer??=createThrowComposer($('#throwComposer'),{getItem:heldItem,getSaved:()=>world.throwPresets||[],onChange(){queueSave();creativePreview();renderCreative()},onSave(p){remember();world.throwPresets??=[];const id=p.id||uid(),preset={id,name:p.name,layers:structuredClone(p.layers),settings:{...p.settings}},index=world.throwPresets.findIndex(v=>v.id===id);if(index<0)world.throwPresets.push(preset);else world.throwPresets[index]=preset;heldItem().recipeId=id;heldItem().name=p.name;queueSave();inventoryKey='';renderCreative();toast('Preset enregistré dans votre monde.')},onDelete(id){if(!confirm('Supprimer ce preset ? Les créneaux équipés gardent leur copie.'))return;remember();world.throwPresets=(world.throwPresets||[]).filter(p=>p.id!==id);heldItem().recipeId=null;queueSave();inventoryKey='';renderCreative()},onPreview(){const rect=canvas.getBoundingClientRect();fireFromView(rect.width/2,rect.height/2,{...heldItem(),destroy:false})}});throwComposer.render();
 }
-function launchThrownEffect(point,item){
- if(!creativeActive()||document.pointerLockElement!==canvas||inventoryOpen)return false;
- const c=scene.debug?.().camera;if(!c||!validImpact(map(),point,W)){toast('Vise un bloc ou le terrain à portée.');return false}
- const from={x:c.position.x,y:c.position.z,z:c.position.y};
- if(!throwQueue.launch(map(),true,from,point,item,W,performance.now())){toast('Destination hors de portée ou hors de la carte.');return false}
+function fireFromView(x,y,item){
+ const ray=scene.interactionRay(x,y);if(!ray||ray.map!==map())return false;
+ if(!throwQueue.fire(map(),true,ray.origin,ray.direction,item,W,performance.now()))return false;
  schedule();return true;
+}
+function launchThrownEffect(e,item){
+ if(!creativeActive()||document.pointerLockElement!==canvas||inventoryOpen)return false;
+ const {x,y}=creativeCoordinates(e);return fireFromView(x,y,item);
 }
 function commitThrownImpacts(impacts,metrics={}){
  if(mode!=='build'||viewMode!=='mj')return;
@@ -621,7 +623,7 @@ function creativePointerDown(e){
  if(e.button!==0&&e.button!==2)return true;e.preventDefault?.();canvas.focus({preventScroll:true});creativeLastEvent={clientX:e.clientX,clientY:e.clientY};
  if(item?.kind==='inspect'){const p=creativePoint(e);if(p.block&&!p.placedBlock){if(document.pointerLockElement===canvas)document.exitPointerLock?.();inspectActivationVoxel(blockRef(p));return true}selectObject(p.placedBlock?.id||creativePick(e));if(document.pointerLockElement===canvas)document.exitPointerLock?.();showPanel('inspectorPanel');return true}if(item?.kind==='pipette'){sampleCreative();return true}if(item?.kind==='frame'){if(e.button===2){placeCreativeFrame(creativePoint(e));if(document.pointerLockElement===canvas)document.exitPointerLock?.();showPanel('inspectorPanel')}return true}
  if(item?.kind==='selection'){updateCreativeZone(creativePoint(e),e.button===2);return true}
- if(item?.kind==='throw'){if(e.button===2)launchThrownEffect(creativePoint(e),item);return true}
+ if(item?.kind==='throw'){launchThrownEffect(e,item);return true}
  stopMovement();creativeStroke={snapshot:capture(world),button:e.button,interact:false,seen:new Set(),changed:false};creativeUse();
  creativeTimer=setTimeout(creativeRepeat,150);return true;
 }
