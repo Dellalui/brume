@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source=fs.readFileSync(new URL('../dist/editor.mjs',import.meta.url),'utf8');
+const schedule=source.split('\n').find(l=>l.startsWith('function schedule()'));
+assert(schedule);
+const paint=source.split('\n').find(l=>l.trimStart().startsWith('function paint()'));
+const start=paint.indexOf('if(!document.hidden&&(transitioning||visionPending||');
+assert(start>=0);
+const tail=paint.slice(start,-1);
+const frames=[],state={pendingDraw:false,document:{hidden:false},nextEffectClockCheck:0,frameStart:1000,transitioning:false,visionPending:false,throwQueue:{size:1},blockEffectQueue:{size:0},scene:{hasAnimation:()=>false},requestAnimationFrame:f=>frames.push(f),ensureEffectClock:()=>{},paint:()=>{}};
+vm.createContext(state);vm.runInContext(schedule,state);
+vm.runInContext(tail,state);vm.runInContext(tail,state);assert.equal(frames.length,1,'animation requests one native refresh');
+frames.shift()();state.throwQueue.size=0;vm.runInContext(tail,state);assert.equal(frames.length,0,'idle scene does not render');
+state.scene.hasAnimation=()=>true;vm.runInContext(tail,state);assert.equal(frames.length,1,'ambient animation follows refresh rate');frames.shift()();
+state.document.hidden=true;vm.runInContext(tail,state);assert.equal(frames.length,0,'hidden tabs do not request animation frames');
+console.log('PASS: native-refresh animation scheduling, coalescing, idle and hidden state.');

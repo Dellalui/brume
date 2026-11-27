@@ -20,4 +20,11 @@ m.objects.pop();await storage.save(world);assert.deepEqual(await storage.load(),
 const expected=structuredClone(world),queued=storage.save(world);world.maps[0].objects[0].name='After enqueue';await queued;assert.deepEqual(await storage.load(),expected,'queued saves retain their original snapshot');
 await Promise.all([storage.save(world),storage.save({...world,active:world.maps.at(-1).id})]);assert.equal((await storage.load()).active,world.maps.at(-1).id);
 const reopened=createWorldStorage(db);assert.deepEqual(await reopened.load(),await storage.load());
+// A freshly opened writer must delete persisted records on its first save.
+const reload=await reopened.load(),rm=reload.maps[0];
+W.setBlock(rm,7,7,0,'stone');await reopened.save(reload);
+const writer=createWorldStorage(db),loadedAgain=await writer.load(),lm=loadedAgain.maps[0];
+W.setBlock(lm,7,7,0,null);lm.objects.pop();await writer.save(loadedAgain);
+const checked=await createWorldStorage(db).load();assert.deepEqual(checked,loadedAgain,'deleted columns and objects stay deleted after reopening');
+assert.equal(W.blockAt(checked.maps[0],7,7,0),null);
 console.log('PASS: immutable shared history, legacy/voxel roundtrips, real IndexedDB API, sparse writes, deletions, ordered saves and reopening.');
