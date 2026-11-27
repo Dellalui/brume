@@ -106,8 +106,9 @@ export function sweepCameraMotion(map,from,to,liquids=null){
  for(let i=0;i<count;i++)for(const axis of ['x','z','y']){if(Math.abs(step[axis])<EPS)continue;const end=a.clone();end[axis]+=step[axis];a.lerp(end,clipFraction(a,end,boxes,radius))}
  return {x:a.x,y:a.y,z:a.z};
 }
-export function perspectiveCamera(map,actor,width,height,{liquids=null}={}){
- const c=map.camera,angle=Number.isFinite(c.angle)?c.angle:0,tilt=Number.isFinite(c.tilt)?c.tilt:.5,axes=cameraAxes(angle,c.mode==='third'?W.clamp(tilt,.08,.96):tilt),camera=new T.PerspectiveCamera(c.mode==='first'?78:c.mode==='fly'?75:48,width/Math.max(1,height),.05,180);
+export function perspectiveCamera(map,actor,width,height,{liquids=null,reuse=null}={}){
+ const c=map.camera,angle=Number.isFinite(c.angle)?c.angle:0,tilt=Number.isFinite(c.tilt)?c.tilt:.5,axes=cameraAxes(angle,c.mode==='third'?W.clamp(tilt,.08,.96):tilt),camera=reuse?.isPerspectiveCamera?reuse:new T.PerspectiveCamera();
+ camera.fov=c.mode==='first'?78:c.mode==='fly'?75:48;camera.aspect=width/Math.max(1,height);camera.near=.05;camera.far=180;delete camera.userData.closeView;
  if(c.mode==='fly'){let p=c.fly||{x:map.width/2,y:10,z:map.height/2};camera.position.set(p.x,p.y,p.z);camera.lookAt(camera.position.clone().add(axes.forward))}
  else if(c.mode==='first'){
   if(!actor)return null;

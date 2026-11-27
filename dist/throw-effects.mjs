@@ -25,11 +25,16 @@ export function validImpact(map,point,W){
 export const MATERIAL_HARDNESS=Object.freeze({grass:.6,dirt:.6,sand:.35,gravel:.8,clay:.9,snow:.25,mud:.4,stone:1.5,cobble:1.4,granite:2.8,marble:2.2,slate:1.8,coal:1.6,iron:3,copper:2.4,gold:2,crystal:2.5,oak:1.2,pinewood:1,birchwood:1,planks:.8,darkplanks:.8,paleplanks:.8,brick:1.6,stonebrick:2,sandstone:1.1,tile:.9,leaves:.2,darkleaves:.2,hay:.2,cactus:.5,ice:.7,glass:.35,water:.15,lava:.15,basalt:3,infernal:2.5,ash:.3,magma:2,obsidian:5,soul:.6,hellbrick:2.5,glowstone:1.2});
 export function materialHardness(material){return MATERIAL_HARDNESS[material]??1.2}
 function canBreak(power,distance,material){return power-distance>=materialHardness(material)}
-function groundProtected(map,x,y,locks){return Object.entries(map.blockGroups||{}).some(([k,id])=>locks.has(id)&&k.startsWith(x+','+y+','))||(map.objects||[]).some(o=>(o.locked||o.protected||locks.has(o.group))&&o.type==='block'&&distanceToBox({x:x+.5,y:y+.5,z:0},o.x,o.y,0,o.w??1,o.d??1,1,o.facing||0)===0)}
+function groundProtection(map,locks){
+ const columns=new Set(),objects=(map.objects||[]).filter(o=>o.type==='block'&&(o.locked||o.protected||locks.has(o.group))),memo=new Map();
+ if(locks.size)for(const [k,id]of Object.entries(map.blockGroups||{})){if(!locks.has(id))continue;const first=k.indexOf(','),second=k.indexOf(',',first+1);if(first>=0&&second>first)columns.add(k.slice(0,second))}
+ return (x,y)=>{const k=x+','+y;if(columns.has(k))return true;if(!objects.length)return false;if(!memo.has(k))memo.set(k,objects.some(o=>distanceToBox({x:x+.5,y:y+.5,z:0},o.x,o.y,0,o.w??1,o.d??1,1,o.facing||0)===0));return memo.get(k)};
+}
 export function planImpact(map,point,item,W){
  const cfg=throwConfig(item),plan={voxels:[],objects:[],ground:[],protectedCount:0,resistedCount:0,limited:false};
  if(!cfg.destroy||!validImpact(map,point,W))return plan;
  const lockedGroups=new Set((map.groups||[]).filter(g=>g.locked||g.protected).map(g=>g.id)),candidates=[],r=cfg.radius;
+ const protectedGround=groundProtection(map,lockedGroups);
  const xmin=Math.max(0,Math.floor(point.x-r)),xmax=Math.min(map.width-1,Math.floor(point.x+r)),ymin=Math.max(0,Math.floor(point.y-r)),ymax=Math.min(map.height-1,Math.floor(point.y+r));
  for(let y=ymin;y<=ymax;y++)for(let x=xmin;x<=xmax;x++){
   if(!W.activeCell(map,x,y))continue;
@@ -37,7 +42,7 @@ export function planImpact(map,point,item,W){
   if(ground> -16){
    const distance=distanceToBox(point,x,y,ground-1,1,1,1);
    if(distance<=r){
-    if(groundProtected(map,x,y,lockedGroups))plan.protectedCount++;
+    if(protectedGround(x,y))plan.protectedCount++;
     else {
      for(let z=ground;z> -16;z-=.5){
       const d=distanceToBox(point,x,y,z-.5,1,1,.5);
@@ -80,8 +85,9 @@ export function applyImpact(map,plan,W){
   if(locks.has(map.blockGroups?.[b.key])||map.blocks?.[b.x+','+b.y]?.[b.z]!==b.material)continue;
   if(W.setBlock(map,b.x,b.y,b.z,null)){if(map.blockGroups)delete map.blockGroups[b.key];count++}
  }
+ const protectedGround=plan.ground?.length?groundProtection(map,locks):null;
  for(const b of (plan.ground||[]).slice().sort((a,b)=>b.z-a.z)){
-  if(groundProtected(map,b.x,b.y,locks)||W.groundAt(map,b.x,b.y)!==b.z)continue;
+  if(protectedGround(b.x,b.y)||W.groundAt(map,b.x,b.y)!==b.z)continue;
   if(W.digGround(map,b.x,b.y,.5))count++;
  }
  const ids=new Set(plan.objects.map(o=>o.id));
