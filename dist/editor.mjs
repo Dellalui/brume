@@ -538,8 +538,9 @@ $('#previewZone').onclick=()=>{try{let plan=zonePlan(),removals=plan.filter(p=>!
 // Creative MJ workspace. Scene data and schematic math live in construction.mjs.
 function heldItem(){return C.initBuilder(world).slots[C.initBuilder(world).active]}
 function creativeActive(){return creativeReady&&!aim&&mode==='build'&&viewMode==='mj'&&tool==='creative'}
-function creativePoint(e=creativeLastEvent){const r=canvas.getBoundingClientRect();const p=scene.world(document.pointerLockElement===canvas||!e?r.width/2:e.clientX-r.left,document.pointerLockElement===canvas||!e?r.height/2:e.clientY-r.top);const c=scene.debug?.().camera;const item=heldItem(),range=item?.kind==='throw'?(throwConfig(item).range||Infinity):(world.builder?.reach||12);if(c&&Math.hypot(p.x-c.position.x,p.y-c.position.z,(p.z??0)-c.position.y)>range)return{x:-1,y:-1};return p}
-function creativePick(e=creativeLastEvent){const r=canvas.getBoundingClientRect();return scene.pick(document.pointerLockElement===canvas||!e?r.width/2:e.clientX-r.left,document.pointerLockElement===canvas||!e?r.height/2:e.clientY-r.top,null,true,world.builder?.reach||12)}
+function creativeCoordinates(e=creativeLastEvent){const r=canvas.getBoundingClientRect(),center=document.pointerLockElement===canvas||!e;return{x:center?r.width/2:e.clientX-r.left,y:center?r.height/2:e.clientY-r.top}}
+function creativePoint(e=creativeLastEvent){const {x,y}=creativeCoordinates(e),item=heldItem(),range=item?.kind==='throw'?(throwConfig(item).range||Infinity):(world.builder?.reach||12);return scene.world(x,y,range)}
+function creativePick(e=creativeLastEvent){const {x,y}=creativeCoordinates(e);return scene.pick(x,y,null,true,world.builder?.reach||12)}
 function equipSlot(index){stopCreativeStroke();C.initBuilder(world).active=W.mod(index,9);tool='creative';adding=null;drawBrush=null;renderCreative();queueSave();creativePreview();}
 function captureCreative(){if(!creativeActive())return;inventoryOpen=false;canvas.focus({preventScroll:true});try{const result=canvas.requestPointerLock?.();result?.catch?.(()=>toast('La capture de souris a été refusée. Réessayez avec Entrer en construction.'));if(!canvas.requestPointerLock)toast('Ce navigateur ne permet pas la capture de souris.')}catch{toast('Capture de souris indisponible.')}renderCreative()}
 function toggleInventory(force){if(viewMode!=='mj')return;stopCreativeStroke();const open=force??!inventoryOpen;if(open){for(let p of $$('.panel'))p.hidden=true;creativeResume=document.pointerLockElement===canvas;if(document.pointerLockElement===canvas)document.exitPointerLock?.();clearNavigationInput();if(mode!=='build')setMode('build');tool='creative'}inventoryOpen=open;renderCreative();if(!open){renderInventory();canvas.focus({preventScroll:true});if(creativeResume)captureCreative()}}
@@ -582,7 +583,7 @@ function creativePreview(e){
  if(['brush','fogbrush'].includes(item?.kind)){let p=creativePoint(),box=CT.brushBox(p,item,false);drawBrush=box?{...box,zone:true}:null;schedule();return}if(['frame','pipette'].includes(item?.kind)){drawBrush=null;schedule();return}
  if(item?.kind==='selection'){if(creativeZone)drawBrush={...creativeZone,zone:true};schedule();return}if(item?.kind==='inspect'){drawBrush=null;schedule();return}
  const now=Date.now();if(e&&now-creativePreviewTime<45)return;creativePreviewTime=now;
- const p=creativePoint(),targetBox=creativeTargetBox(p);let i=0,parts=C.placement(item,p,world,()=> 'preview-'+i++);if(!parts.length){drawBrush=targetBox?{target:targetBox}:null;schedule();return}
+ const {x,y}=creativeCoordinates(),{point:p,id}=scene.aimAt(x,y,world.builder?.reach||12),targetBox=creativeTargetBox(p,id);let i=0,parts=C.placement(item,p,world,()=> 'preview-'+i++);if(!parts.length){drawBrush=targetBox?{target:targetBox}:null;schedule();return}
  const error=C.placementError(map(),parts);drawBrush={object:parts[0],companions:parts.slice(1,96),valid:!error};if(targetBox)drawBrush.target=targetBox;if(item.kind==='schema'){const boxes=parts.map(W.bounds),x=Math.min(...boxes.map(b=>b.x)),y=Math.min(...boxes.map(b=>b.y)),z=Math.min(...parts.map(o=>W.elevation(o,map())));drawBrush.volume={x,y,z,w:Math.max(...boxes.map(b=>b.x+b.w))-x,d:Math.max(...boxes.map(b=>b.y+b.h))-y,h:Math.max(...parts.map(o=>W.elevation(o,map())+o.height))-z}}$('#hint').textContent=error||C.itemName(item,world)+' · Clic droit pour poser'+(parts.length>96?' · aperçu limité à 96 éléments':'');schedule();
 }
 function updateCreativeZone(p,second=false){
@@ -673,8 +674,8 @@ function initCreativeWorkbench(){
 
 function placeCreativeFrame(p){if(!p.placedBlock){placeSurface(p);return}const n=p.normal;if(!n)return;let o=W.newObject('image',p.x-.425+n.x*.03,p.y-.425+n.y*.03,uid());Object.assign(o,{name:'Cadre · image à importer',w:.85,d:.85,height:.85,baseZ:p.z+n.z*.03,mountNormal:n,blocking:false,blocksSight:false});change(()=>{map().objects.push(o);selection=o.id});showPanel('inspectorPanel');$('#inspector-tab-appearance')?.click();}
 
-function creativeTargetBox(p){
- const id=creativePick(),o=map().objects.find(o=>o.id===id)||p.placedBlock;
+function creativeTargetBox(p,id){
+ const o=(id?map().objects.find(o=>o.id===id):null)||p.placedBlock;
  if(o){if(W.isSegment(o)){const b=W.bounds(o);return{x:b.x,y:b.y,z:W.elevation(o,map()),w:b.w,d:b.h,h:o.height||1,angle:0}}return{x:o.x,y:o.y,z:W.elevation(o,map()),w:o.w||1,d:o.d||1,h:o.height||1,angle:o.facing||0}}
  const b=CT.targetCell(p);return b&&W.activeCell(map(),b.x,b.y)?{...b,w:1,d:1,h:p.block?W.blockSize(map(),b.x,b.y,b.z):1,angle:0}:null;
 }

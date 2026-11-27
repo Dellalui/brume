@@ -12,6 +12,8 @@ const miss=new T.Raycaster(new T.Vector3(32.5,100,32.5),new T.Vector3(0,1,0));
 assert.equal(miss.intersectObject(fast,false).length,0);assert.equal(matrixReads,0,'cold offscreen ray does not build instance index');
 miss.set(new T.Vector3(32.5,100,32.5),new T.Vector3(0,-1,0));miss.far=1;assert.equal(miss.intersectObject(fast,false).length,0);assert.equal(matrixReads,0,'short ray rejects distant mesh before indexing');
 assert.deepEqual(rayCandidates(buildRayBuckets(bounds),bounds,[32.5,8,32.5],[0,-1,0]),[32*64+32]);
+assert.deepEqual(rayCandidates(buildRayBuckets(bounds),bounds,[32.5,8,32.5],[0,-1,0],6),[]);
+assert.deepEqual(rayCandidates(buildRayBuckets(bounds),bounds,[32.5,8,32.5],[0,-1,0],7),[32*64+32]);
 const ray=new T.Raycaster(),key=h=>[h.instanceId,Math.round(h.distance*1e6),...h.face.normal.toArray()];
 function compare(o,d){
  ray.set(new T.Vector3(...o),new T.Vector3(...d).normalize());
@@ -22,5 +24,9 @@ matrix.makeRotationY(.7).setPosition(32.5,2.5,32.5);for(const m of [original,fas
 compare([32.5,8,32.5],[0,-1,0]);
 for(const m of [original,fast]){m.position.set(3,0,2);m.updateMatrixWorld(true)}
 compare([35.5,8,34.5],[0,-1,0]);
+// Verify finite world-space reach even for scaled instance groups.
+for(const m of [original,fast]){m.scale.set(2,.5,3);m.updateMatrixWorld(true)}
+for(const far of [1,5,12,100]){ray.far=far;compare([68,8,99.5],[0,-1,0])}ray.far=Infinity;
+const small=accelerateInstancePicking(new T.InstancedMesh(geometry,material,8));small.computeBoundingSphere();let reads=0;const read=small.getMatrixAt;small.getMatrixAt=function(...args){reads++;return read.apply(this,args)};ray.set(new T.Vector3(0,50,0),new T.Vector3(0,-1,0));ray.far=2;assert.equal(ray.intersectObject(small,false).length,0);assert.equal(reads,0,'small batches reject an out-of-reach ray without visiting instances');small.dispose();
 original.dispose();fast.dispose();geometry.dispose();material.dispose();
 console.log('PASS: exact Three raycast parity, instance transforms, cache invalidation and 4096-to-1 broad phase.');
