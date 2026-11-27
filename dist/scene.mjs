@@ -8,6 +8,7 @@ import {indexGroundEdits,groundChunkDescriptor} from './ground-rectangles.mjs';
 import * as T from './vendor/three.module.min.js';
 import {perspectiveCamera,sweepCameraMotion} from './navigation.mjs';
 import * as W from './world.mjs';
+import {makeCarriedSource} from './carried-light.mjs';
 import {buildVisionOutline} from './combat-vision-outline.mjs';
 import {makeModel,disposeModel} from './models.mjs';
 import {effectEnvelope} from './effect-layer.mjs';
@@ -38,6 +39,7 @@ export function renderer(canvas,{createRenderer=p=>new T.WebGLRenderer(p),create
  const spriteResidency=createSpriteResidency(textures,im=>textureFor(im),gpu);
  const proxyGeometry=shadowVolumeGeometry(),contactTexture=contactShadowTexture();
  const ghostExtras=new Map(),assetLibrary=createAssetLibrary(()=>last.onAssetReady?.());let renderRegion=null,cameraKey='',cameraMap=null;
+ const carriedPoint=new T.PointLight('#ffda9e',0,5,2),carriedSpot=new T.SpotLight('#ffda9e',0,5,Math.PI/6,.35,2);scene.add(carriedPoint,carriedSpot,carriedSpot.target);carriedPoint.castShadow=false;carriedSpot.castShadow=false;
  let localLights=[];
  let lastShadowRefresh=0;let sightTexture=null,sightData=null,terrain=null,terrainKey='',terrainEpoch=-1,terrainMap=null,dimensions='',view,camera,width=1,height=1,last={},ghost=null,ghostKey='',frame=0,lightKey='',shadowDirty=true,shadowUpdates=0,terrainGeneration=0,terrainBuilds=0,terrainReuses=0,groundEditIndex=null,terrainChunksRef=null,groundDataKey='',groundBatch=null,groundBatchKey='',groundPlanes=0;
  const surfaces=createSurfaceLibrary({createCanvas,anisotropy:Math.min(8,gpu.capabilities?.getMaxAnisotropy?.()||4),onReady:()=>{shadowDirty=true;last.onAssetReady?.()}});
@@ -354,7 +356,14 @@ renderLiquids(opts,groups,origin,size);renderTransparentBlocks(groups);syncRelie
  hemi.intensity=Math.max(.5,map.lighting.ambient*2.2);sun.intensity=Math.max(.22,map.lighting.ambient)*1.55;let angle=map.lighting.sunAngle||0,anchor=lightingAnchor(map,camera);sun.color.set('#ffedcc');sun.position.set(anchor.x-Math.cos(angle)*12,18,anchor.y-Math.sin(angle)*12);sun.target.position.set(anchor.x,0,anchor.y);fill.position.set(anchor.x+Math.cos(angle)*10,10,anchor.y+Math.sin(angle)*10);fill.target.position.set(anchor.x,0,anchor.y);fill.intensity=.24+Math.max(0,map.lighting.ambient-.18)*.55;sun.shadow.radius=map.blockLighting?.softness??2;sun.shadow.normalBias=.025;sun.shadow.bias=-.0002;let quality=map.blockLighting?.quality===1?1024:2048;if(sun.shadow.mapSize.x!==quality){sun.shadow.mapSize.set(quality,quality);sun.shadow.map?.dispose();sun.shadow.map=null;shadowDirty=true}sun.shadow.intensity=W.clamp(map.lighting.sunPower??.45,0,1);let radius=Math.min(45,Math.max(16,map.width,map.height)/2);Object.assign(sun.shadow.camera,{left:-radius,right:radius,top:radius,bottom:-radius,near:.1,far:90});sun.shadow.camera.updateProjectionMatrix();sun.castShadow=map.lighting.shadows!==false;
  let env=environmentSettings(map),cloudAngle=angle;if(env.enabled&&env.syncLight){let l=environmentLight(env);hemi.intensity=.32+l.ambient*1.5;sun.intensity=l.sun*1.73;sun.color.copy(l.color);const solar=new T.Vector3(Math.cos(l.angle),Math.sin(l.angle),-.25).normalize();sun.position.set(anchor.x+solar.x*48,solar.y*48,anchor.y+solar.z*48);sun.castShadow=map.lighting.shadows!==false&&l.sun>.02;fill.intensity=.20+l.ambient*.65;cloudAngle=l.angle;}fogUniforms.cloudShadowEnabled.value=env.enabled&&env.quality!=='off'&&env.cloudShadows!==false?1:0;fogUniforms.cloudShadowStrength.value=Math.sqrt(Math.max(0,env.cloudShadowStrength??.42))*.7*(env.weather==='rain'?.85:1)*Math.min(1,environmentLight(env).sun*3);fogUniforms.cloudCoverage.value=env.clouds??.45;fogUniforms.cloudWind.value=env.wind??.25;fogUniforms.cloudDirection.value.set(Math.cos(cloudAngle+.85),Math.sin(cloudAngle+.85)).normalize();let objectById=new Map(map.objects.map(o=>[o.id,o]));
  const useShadows=map.lighting.shadows!==false,budget=pointShadowBudget(useShadows,map.blockLighting?.quality);
- const sources=selectLocalLights(opts.lights?.sources||[],anchor,opts.mode!=='mj'&&viewer?W.center(viewer):{x:camera.position.x,y:camera.position.z},localLights,budget);localLights=sources;
+ // The controlled actor's light uses the live transform, not the cached
+ // tactical light map. No moving cube-shadow render on every frame.
+ const carrier=opts.mode!=='mj'?viewer:null,cp=carrier?W.center(carrier):null;
+ const carried=carrier?makeCarriedSource(carrier.light,carrier.id,{x:cp.x,y:cp.y,z:W.elevation(carrier,map)+Math.min(W.eyeHeight(carrier),map.camera.firstEye??Infinity)*.88},carrier.facing||0):null;
+ carriedPoint.intensity=0;carriedSpot.intensity=0;
+ if(carried){const l=carried.kind==='flashlight'?carriedSpot:carriedPoint;l.position.set(carried.x,carried.z,carried.y);l.color.set(carried.color);l.distance=carried.radius;l.intensity=carried.power*12;
+ if(l===carriedSpot){l.angle=carried.angle*Math.PI/360;const direction=map.camera.mode==='first'?camera.getWorldDirection(new T.Vector3()):new T.Vector3(Math.sin(carried.heading),-.12,-Math.cos(carried.heading)).normalize();l.target.position.copy(l.position).addScaledVector(direction,carried.radius);}}
+ const sources=selectLocalLights((opts.lights?.sources||[]).filter(s=>!carrier||s.owner!==carrier.id),anchor,opts.mode!=='mj'&&viewer?W.center(viewer):{x:camera.position.x,y:camera.position.z},localLights,budget);localLights=sources;
  pointLights.forEach((l,i)=>{
   const source=sources[i],oldCast=l.castShadow;
   l.intensity=source?source.power*12:0;
