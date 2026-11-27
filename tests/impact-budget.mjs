@@ -8,7 +8,7 @@ import {impactEnvelope} from '../dist/impact-bodies.mjs';
 const fx=createEffects(()=>canvasStub()),v=createThrowVisuals(fx),scene=new T.Scene(),camera=new T.PerspectiveCamera();scene.add(v.group);camera.position.set(8,6,12);camera.lookAt(0,1,0);
 const impact=(id,x=0)=>({id,phase:'impact',age:0,position:{x,y:0,z:0},tail:{x,y:0,z:0},config:throwConfig({preset:'fire',visualQuality:'high'})});
 assert.equal(impactQuality({visualQuality:'high'},'low',3),'low');assert.equal(impactQuality({visualQuality:'high'},'low',2),'balanced');
-const ps=[impact('a'),impact('b'),impact('c'),impact('overflow')];v.update(ps,0,camera,'high');assert.equal(v.stats().active,4);assert.equal(v.stats().instances,4*46);
+const ps=[impact('a'),impact('b'),impact('c'),impact('overflow')];v.update(ps,0,camera,'high');assert.equal(v.stats().active,4);assert.equal(v.stats().instances,4*22,'no flight buffers allocated for direct impacts');
 let disposed=0;v.group.traverse(o=>{if(o.material)o.material.addEventListener('dispose',()=>disposed++)});
 v.update(ps.map(p=>({...p,age:.8})),.8,camera,'high');const root=v.group.children[0];assert(root.getObjectByName('Quarks · blast_fire'));
 v.update(ps.map(p=>({...p,age:1.9})),1.9,camera,'high');assert(!root.getObjectByName('Quarks · blast_fire'),'expired particle batches are released while smoke remains');
@@ -17,5 +17,6 @@ v.update([impact('far',10000)],4,camera,'balanced');assert.equal(v.stats().activ
 v.update([{...impact('late'),age:.8}],4.8,camera,'balanced');assert.equal(v.stats().active,1);assert(!v.group.children[0].getObjectByName('Quarks · blast_fire'),'reentering view does not restart an old burst');
 assert(impactEnvelope('void',.8,3).width<impactEnvelope('void',.1,3).width);
 assert(impactEnvelope('blast',.8,3).width>impactEnvelope('blast',.1,3).width);
-v.update(Array.from({length:100},(_,i)=>({...impact('many'+i),age:.1})),6,camera,'balanced');assert.equal(v.stats().active,24);assert.equal(v.stats().simplified,76,'overflow remains visible as instanced proxies');v.update([],7,camera,'balanced');assert.equal(v.stats().active+v.stats().simplified,0);
+v.update(Array.from({length:100},(_,i)=>({...impact('many'+i),age:.1})),6,camera,'balanced');assert.equal(v.stats().active,24);assert.equal(v.stats().simplified,76,'overflow remains visible as instanced proxies');const proxy=v.group.getObjectByName('Impacts simplifiés');v.update([],7,camera,'balanced');assert.equal(v.stats().active+v.stats().simplified,0);assert.equal(proxy.parent,null);
+v.update(Array.from({length:100},(_,i)=>({...impact('next'+i),age:.1})),8,camera,'balanced');assert.equal(v.group.getObjectByName('Impacts simplifiés'),proxy,'bounded overflow buffer reused after idle');v.update([],9,camera,'balanced');
 v.dispose();fx.dispose();console.log('PASS: concurrent impact budget, no offscreen allocation, early particle disposal, late reentry and inward implosion.');

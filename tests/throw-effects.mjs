@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as W from '../dist/world.mjs';
 import * as T from '../dist/vendor/three.module.min.js';
 import {blockObject} from '../dist/construction.mjs';
-import {PRESETS,THROW_ITEMS,throwConfig,planImpact,applyImpact,createThrowQueue,flightTrail,MAX_REMOVALS} from '../dist/throw-effects.mjs';
+import {PRESETS,THROW_ITEMS,throwConfig,planImpact,applyImpact,applyImpactBatch,createThrowQueue,flightTrail,MAX_REMOVALS} from '../dist/throw-effects.mjs';
 import {createEffects} from '../dist/effects.mjs';
 import {createThrowVisuals} from '../dist/throw-visuals.mjs';
 import {canvasStub,fixture} from '../test-support/three-fixture.mjs';
@@ -27,6 +27,15 @@ applyImpact(crater,craterPlan,W);
 assert(W.groundAt(crater,16,16)<0);assert.equal(W.blockAt(crater,16,16,0),'obsidian');assert.equal(W.blockAt(crater,17,16,0),null);
 assert.equal(W.groundAt(crater,0,0),0);
 assert.equal(planImpact(crater,center,{power:6,destroy:false},W).ground.length,0);
+// Simultaneous blasts keep the original sequential damage rules and
+// trigger exactly one editor transaction for the entire frame.
+const batchMap=W.newMap('batch','Batch',32,32);W.prepareBlocks(batchMap);
+for(let x=10;x<20;x++)for(let y=10;y<20;y++)W.setBlock(batchMap,x,y,0,'glass');
+const sequential=structuredClone(batchMap),hits=[{point:{x:15,y:15,z:0},item:{power:3}},{point:{x:16,y:15,z:0},item:{power:4}},{point:{x:16,y:15,z:0},item:{destroy:false}}];
+let expected=0;for(const {point,item}of hits)expected+=applyImpact(sequential,planImpact(sequential,point,item,W),W);
+let snapshots=0;const combined=applyImpactBatch(batchMap,hits,W,()=>snapshots++);
+assert.equal(snapshots,1);assert.equal(combined.count,expected);assert.deepEqual(batchMap,sequential);
+assert.equal(applyImpactBatch(batchMap,[hits[2]],W,()=>snapshots++).changed,false);assert.equal(snapshots,1);
 let impacts=0;const queue=createThrowQueue(),from={x:2000,y:2000,z:5};
 assert(!queue.launch(map,false,from,at,{},W,0));for(let i=0;i<40;i++)assert(queue.launch(map,true,from,at,{power:2},W,0));assert.equal(queue.size,40);
 assert(queue.advance(map,true,50,()=>impacts++).every(p=>p.phase==='flight'&&p.trail.length===24));assert.equal(impacts,0);assert(queue.advance(map,true,500,()=>impacts++).every(p=>p.phase==='impact'));assert.equal(impacts,40);queue.advance(map,true,1000,()=>impacts++);assert.equal(impacts,40);assert.equal(queue.advance(map,true,3600,()=>impacts++).length,0);

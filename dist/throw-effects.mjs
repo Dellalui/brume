@@ -64,7 +64,11 @@ export function planImpact(map,point,item,W){
  }
  for(const o of map.objects||[]){
   if(o.type!=='block')continue;
-  const w=o.w??1,d=o.d??1,h=o.height??1,z=W.elevation(o,map);
+  const w=o.w??1,d=o.d??1,h=o.height??1;
+  // Conservative circumscribed circle rejects distant rotated blocks before
+  // calculating altitude or exact distance; all original boundary cases remain.
+  if(Math.hypot(o.x+w/2-point.x,o.y+d/2-point.y)>r+Math.hypot(w,d)/2+1e-7)continue;
+  const z=W.elevation(o,map);
   if(![o.x,o.y,z,w,d,h].every(Number.isFinite)||Math.min(w,d,h)<=0)continue;
   const distance=distanceToBox(point,o.x,o.y,z,w,d,h,o.facing||0);
   if(distance>r)continue;
@@ -94,6 +98,24 @@ export function applyImpact(map,plan,W){
  if(ids.size){const before=map.objects.length;map.objects=map.objects.filter(o=>!ids.has(o.id)||o.type!=='block'||o.locked||o.protected||locks.has(o.group));count+=before-map.objects.length}
  return count;
 }
+// Preserve impact order and the per-impact removal/protection rules while
+// letting the editor commit one transaction for simultaneous hits.
+export function applyImpactBatch(map,impacts,W,beforeChange=()=>{}){
+ let changed=false,count=0,protectedCount=0,resistedCount=0,limited=0,destructive=0;
+ for(const {point,item} of impacts){
+  if(item.destroy===false)continue;
+  destructive++;const plan=planImpact(map,point,item,W);
+  if(plan.voxels.length||plan.objects.length||plan.ground.length){
+   if(!changed){beforeChange();changed=true}
+   count+=applyImpact(map,plan,W);
+  }
+  protectedCount+=plan.protectedCount;resistedCount+=plan.resistedCount;limited+=Number(plan.limited);
+ }
+ return {changed,count,protectedCount,resistedCount,limited,destructive};
+}
+function impactLayers(config){
+ return config.layers.filter(l=>l.enabled).map(layer=>({id:layer.id,delay:layer.delay,duration:layer.duration,config:{...config,id:layer.kind,color:layer.color,shape:layer.shape,strength:layer.strength,radius:config.radius*layer.size,duration:layer.duration}}));
+}
 export function flightPosition(from,to,t,out={}){
  t=Math.max(0,Math.min(1,t));const arc=Math.sin(t*Math.PI)*.28;
  out.x=from.x+(to.x-from.x)*t;out.y=from.y+(to.y-from.y)*t;out.z=from.z+(to.z-from.z)*t+arc;return out;
@@ -106,13 +128,13 @@ export function createThrowQueue(namespace='throw'){
  let items=[],serial=0;
  return {
   launch(map,enabled,from,to,item,W,now){
-   if(!enabled||!validImpact(map,to,W)||![from?.x,from?.y,from?.z,now].every(Number.isFinite)||!inThrowRange(from,to,item))return false;
-   const config=throwConfig(item),duration=Math.max(16,throwDistance(from,to)/config.speed*1000);
-   items.push({id:namespace+'-'+(++serial),map,from:{...from},to:{x:to.x,y:to.y,z:to.z},config,started:now,duration,impactAt:null});return true;
+   if(!enabled||!validImpact(map,to,W)||![from?.x,from?.y,from?.z,now].every(Number.isFinite))return false;
+   const config=throwConfig(item),distance=throwDistance(from,to);if(config.range!==0&&distance>config.range+1e-6)return false;const duration=Math.max(16,distance/config.speed*1000);
+   items.push({id:namespace+'-'+(++serial),map,from:{...from},to:{x:to.x,y:to.y,z:to.z},config,layers:impactLayers(config),started:now,duration,impactAt:null});return true;
   },
   impact(map,point,item,W,now,level=map.editLevel||0){
    if(!validImpact(map,point,W)||!Number.isFinite(now)||items.length>=32)return false;
-   const config=throwConfig(item);items.push({id:namespace+'-'+(++serial),map,to:{x:point.x,y:point.y,z:point.z},config,level,impactAt:now,started:now,duration:0});return true;
+   const config=throwConfig(item);items.push({id:namespace+'-'+(++serial),map,to:{x:point.x,y:point.y,z:point.z},config,layers:impactLayers(config),level,impactAt:now,started:now,duration:0});return true;
   },
   advance(map,enabled,now,onImpact,{deferTrails=false}={}){
    if(!enabled){items=[];return []}
@@ -122,7 +144,7 @@ export function createThrowQueue(namespace='throw'){
     if(p.impactAt===null&&now>=p.started+p.duration){p.impactAt=p.started+p.duration;onImpact(p.to,{preset:p.config.id,power:p.config.power,destroy:p.config.destroy})}
     if(p.impactAt===null){const t=(now-p.started)/p.duration,flight={id:p.id,config:p.config,position:flightPosition(p.from,p.to,t),tail:flightPosition(p.from,p.to,t-.15),phase:'flight',age:0};if(deferTrails){flight.flightFrom=p.from;flight.flightTo=p.to;flight.flightProgress=t}else flight.trail=flightTrail(p.from,p.to,t);visible.push(flight);continue}
     const age=(now-p.impactAt)/1000;
-    for(const layer of p.config.layers){const elapsed=age-layer.delay;if(!layer.enabled||elapsed<0||elapsed>=layer.duration)continue;visible.push({id:p.id+':'+layer.id,config:{...p.config,id:layer.kind,color:layer.color,shape:layer.shape,strength:layer.strength,radius:p.config.radius*layer.size,duration:layer.duration},position:p.to,tail:p.to,level:p.level,phase:'impact',age:elapsed})}
+    for(const layer of p.layers){const elapsed=age-layer.delay;if(elapsed<0||elapsed>=layer.duration)continue;visible.push({id:p.id+':'+layer.id,config:layer.config,position:p.to,tail:p.to,level:p.level,phase:'impact',age:elapsed})}
    }
    items=items.filter(p=>p.impactAt===null||now-p.impactAt<p.config.duration*1000);
    return visible;
