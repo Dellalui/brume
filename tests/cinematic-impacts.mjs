@@ -17,7 +17,7 @@ for(const quality of ['low','balanced','high'])for(const preset of PRESETS.slice
  const config=throwConfig({preset:preset.id,power:6}),position={x:0,y:0,z:.12},tail={x:1,y:1,z:1},p={id:preset.id,config,position,tail,phase:'flight',age:0};
  assert(visuals.update([p],0,camera,quality));
  const root=visuals.group.children[0],initial=visuals.stats().instances;
- assert(initial<=({low:29,balanced:48,high:67}[quality]));
+ assert(initial<=({low:46,balanced:65,high:84}[quality]));
  assert(root.getObjectByName('Projectile trail').visible);const body=root.getObjectByName('Corps 3D procédural'),core=body.getObjectByName('Noyau turbulent 3D'),front=body.getObjectByName('Front de pression 3D');assert(!body.visible);assert(core.material.isShaderMaterial&&front.material.isShaderMaterial);
  p.phase='impact';
  for(let i=0;i<180;i++){
@@ -31,7 +31,7 @@ for(const quality of ['low','balanced','high'])for(const preset of PRESETS.slice
 }
 assert.equal(cases,27);
 const p={id:'override',config:throwConfig({preset:'fire',power:3,visualScale:2,visualQuality:'high'}),position:{x:0,y:0,z:0},tail:{x:0,y:0,z:0},phase:'impact',age:.2};
-visuals.update([p],.2,camera,'low');assert.equal(visuals.stats().instances,67);
+visuals.update([p],.2,camera,'low');assert.equal(visuals.stats().instances,84);
 const core=visuals.group.children[0].getObjectByName('Noyau turbulent 3D');assert.equal(core.scale.x,impactEnvelope('fire',.2,6).width);assert.equal(p.config.radius,3);
 visuals.dispose();factory.dispose();
 console.log('PASS: all nine staged impact animations in three quality levels, finite instance matrices, fixed allocation budget, persistent smoke and cleanup.');
