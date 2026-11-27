@@ -10,6 +10,7 @@ on:
       - 'brume.zip'
       - 'brume-pnj-16-vues.zip'
       - 'scripts/prepare-npcs.py'
+      - 'scripts/version-pages.py'
       - 'tests/npc-presets.mjs'
       - 'tests/shadow-stability.mjs'
       - 'tests/block-visibility.mjs'
@@ -107,6 +108,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/pages-site"
           cp index.html .nojekyll "$RUNNER_TEMP/pages-site/"
           cp -a dist "$RUNNER_TEMP/pages-site/dist"
+          python3 scripts/version-pages.py "$RUNNER_TEMP/pages-site/dist" "$GITHUB_SHA"
           test -s "$RUNNER_TEMP/pages-site/index.html"
           test -s "$RUNNER_TEMP/pages-site/dist/index.html"
       - name: Upload site
@@ -139,8 +141,9 @@ jobs:
                grep -Fq 'dist/index.html' "$RUNNER_TEMP/smoke/root.html" &&
                curl -fsSL --max-time 15 "$base/dist/index.html$query" -o "$RUNNER_TEMP/smoke/game.html" &&
                grep -Fq 'id="app"' "$RUNNER_TEMP/smoke/game.html" &&
-               grep -Fq 'src="bootstrap.mjs"' "$RUNNER_TEMP/smoke/game.html" &&
-               curl -fsSL --max-time 15 "$base/dist/editor.mjs$query" -o "$RUNNER_TEMP/smoke/editor.mjs" &&
+               grep -Fq "src=\"bootstrap.mjs?v=$GITHUB_SHA\"" "$RUNNER_TEMP/smoke/game.html" &&
+               grep -Fq "./editor.mjs?v=$GITHUB_SHA" "$RUNNER_TEMP/smoke/game.html" &&
+               curl -fsSL --max-time 15 "$base/dist/editor.mjs?v=$GITHUB_SHA" -o "$RUNNER_TEMP/smoke/editor.mjs" &&
                curl -fsSL --max-time 15 "$base/dist/assets/materials/grass.jpg$query" -o "$RUNNER_TEMP/smoke/grass.jpg" &&
                curl -fsSL --max-time 15 "$base/dist/assets/npc/guard-00.webp$query" -o "$RUNNER_TEMP/smoke/guard.webp" &&
                python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); assert (p/"editor.mjs").stat().st_size>1000; assert (p/"grass.jpg").read_bytes().startswith(bytes.fromhex("ffd8")); assert (p/"guard.webp").read_bytes()[8:12]==b"WEBP"' "$RUNNER_TEMP/smoke"; then
