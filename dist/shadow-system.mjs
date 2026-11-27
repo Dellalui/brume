@@ -84,6 +84,10 @@ export function selectRenderLights(sources,anchor,viewer,previous=[],shadowLimit
  return stable(chosen,0);
 }
 
+// A distant native light keeps its illumination, but its cube shadow
+// atlas can be smaller. Hysteresis avoids allocation churn on a boundary.
+export function pointShadowResolution(distance,previous=256){return previous===128?(distance<28?256:128):(distance>36?128:256)}
+
 // Keep the original shadow resolutions and light budgets. Only refresh
 // shadow maps whose light volume intersects changed caster bounds.
 // Directional shadows conservatively include every local caster change.

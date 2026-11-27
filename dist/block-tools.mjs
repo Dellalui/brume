@@ -82,7 +82,7 @@ export function blockLightSources(map,space=lightSpace(map)){
     if(!BLOCKS[kind]?.emissive||space.hidden.has(map.blockGroups?.[id]))continue;
     const h=blockSize(map,x,y,z),position=exposedLightPosition(map,{x:x+.5,y:y+.5,z:z+h/2,h,liquid:kind==='lava'},space);
     if(!position)continue;
-    sources.push({...position,power,radius,color:BLOCKS[kind].accent||BLOCKS[kind].top,block:true,owner:null,sourceId:'voxel:'+id,secondary:false});
+    sources.push({...position,renderPosition:{x:x+.5,y:y+.5,z:z+h/2},power,radius,color:BLOCKS[kind].accent||BLOCKS[kind].top,block:true,owner:null,sourceId:'voxel:'+id,secondary:false});
    }
   }
   e={blocks:map.blocks,heights:map.blockHeights,ground:map.ground,blockGroups:map.blockGroups,objects:map.objects,chunks:map.chunks,chunkCount:map.chunks.length,revision:map.blockRevision,build:map.buildRevision,groups,power,radius,sources};emitterCache.set(map,e);
