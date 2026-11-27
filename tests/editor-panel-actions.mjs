@@ -49,4 +49,13 @@ run("setView('mj');setMode('build');syncWorkspace()");assert.equal(c.mode,'build
 run("setMode('play');syncWorkspace()");assert.equal(c.mode,'play');
 assert(scheduled.length>0);
 assert(!/\bof\s+(?<!\$)\$\((?:'[^']*'|"[^"]*")\)\s*\)/.test(source),'querySelector must not be iterated directly');
+// Deselect must also clear the remembered actor, otherwise player controls
+// can still target that actor even when the selection card disappears.
+const cleared=[],selectionCamera={followId:'actor'},d=vm.createContext({viewMode:'mj',selection:'actor',lastActor:'actor',map:()=>({camera:selectionCamera}),clearNavigationInput:()=>cleared.push('input'),cancelAim:()=>cleared.push('aim'),stopMovement:()=>cleared.push('movement'),closeContext:()=>cleared.push('context'),selectObject:id=>{d.selection=id},canvasHUD:{schedule:()=>cleared.push('hud')}});
+vm.runInContext(fn('deselectObject')+';deselectObject()',d);
+assert.equal(d.selection,null);assert.equal(d.lastActor,null);assert.equal(selectionCamera.followId,null);
+assert.deepEqual(cleared,['input','aim','movement','context','hud']);
+d.viewMode='selected';d.selection='actor';d.lastActor='actor';vm.runInContext('deselectObject()',d);assert.equal(d.selection,'actor');assert.equal(d.lastActor,'actor');
+const hudSource=fs.readFileSync(new URL('../dist/canvas-hud.mjs',import.meta.url),'utf8');
+assert(hudSource.includes("'deselect-selection','Désélectionner',api.deselect"));assert(source.includes('deselect:deselectObject'));
 console.log('PASS: real editor panel clicks, workspace sync, resize, reset, player view, construction/play modes and collection selectors.');
