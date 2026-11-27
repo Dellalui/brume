@@ -15,7 +15,7 @@ assert(applyImpact(map,plan,W)>=3);assert.equal(W.blockAt(map,2000,2000,.5),'sto
 assert.equal(planImpact(map,at,{power:6,destroy:false},W).voxels.length,0);
 assert.equal(throwConfig({power:999}).radius,6);
 assert.equal(PRESETS.length,24);assert.equal(THROW_ITEMS.length,24);
-const dense=W.newMap('dense','Dense',32,32);W.prepareBlocks(dense);for(let x=9;x<=21;x++)for(let y=9;y<=21;y++)for(let z=0;z<12;z++)W.setBlock(dense,x,y,z,'stone');
+const dense=W.newMap('dense','Dense',32,32);W.prepareBlocks(dense);for(let x=9;x<=21;x++)for(let y=9;y<=21;y++)for(let z=0;z<12;z++)W.setBlock(dense,x,y,z,'glass');
 const large=planImpact(dense,{x:16,y:16,z:6},{power:6},W);assert(large.limited);assert.equal(large.voxels.length+large.ground.length+large.objects.length,MAX_REMOVALS);
 const crater=W.newMap('crater','Crater',32,32);W.prepareBlocks(crater);
 const center={x:16.5,y:16.5,z:0};
