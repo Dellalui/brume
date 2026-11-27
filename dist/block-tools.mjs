@@ -1,4 +1,6 @@
-import {BLOCKS,blockAt,setBlock,MAX_BLOCK_HEIGHT,MIN_BLOCK_HEIGHT,blockSize} from './blocks.mjs';
+import {BLOCKS,blockAt,blockBase,groundAt,setBlock,MAX_BLOCK_HEIGHT,MIN_BLOCK_HEIGHT,blockSize} from './blocks.mjs';
+import {activeCell} from './chunk-index.mjs';
+import {nearbyBlocks,containsBlock} from './placed-geometry.mjs';
 export const MAX_ZONE=32768;
 export function zoneBounds(a,b){return{x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),z:Math.min(a.z,b.z),w:Math.abs(a.x-b.x)+1,d:Math.abs(a.y-b.y)+1,h:Math.abs(a.z-b.z)+1}}
 export function validateZone(box,step=1){
@@ -33,28 +35,58 @@ export function applyBlockPlan(map,plan,canPlace=()=>true){
  return changed;
 }
 export function cutawayPoint(point,origin,direction,radius=1.1){if(point.y<=origin.y-.78)return false;let x=point.x-origin.x,y=point.y-origin.y,z=point.z-origin.z,t=x*direction.x+y*direction.y+z*direction.z;if(t<0)return false;return (x-direction.x*t)**2+(y-direction.y*t)**2+(z-direction.z*t)**2<radius*radius}
-// The exposed faces depend on voxel edits, not on the moving viewer. Keep
-// emitter extraction separate from the existing nearest-128 selection.
-const emitterCache=new WeakMap(),lightFaces=[[0,0,1],[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,-1]];
-export function blockLightSources(map){
+// World-fixed source placement based on actual exposed faces.
+const emitterCache=new WeakMap();
+export function lightSpace(map){
+ const hidden=new Set((map.groups||[]).filter(g=>g.visible===false).map(g=>g.id));
+ function open(x,y,z,ignore){
+  if(!activeCell(map,x,y)||z<groundAt(map,x,y)-1e-6)return false;
+  const ix=Math.floor(x),iy=Math.floor(y),base=blockBase(map,ix,iy,z);
+  if(base!==null&&BLOCKS[map.blocks[ix+','+iy][base]]?.opaque&&!hidden.has(map.blockGroups?.[ix+','+iy+','+base]))return false;
+  for(const o of nearbyBlocks(map,x,y)){
+   if(o.id===ignore||o.visible===false||hidden.has(o.group)||!BLOCKS[o.material||'stone']?.opaque)continue;
+   const bottom=(o.baseZ??groundAt(map,x,y))+(o.offsetZ||0);
+   if(z>=bottom&&z<bottom+(o.height||1)&&containsBlock(o,x,y))return false;
+  }
+  return true;
+ }
+ return {open,hidden};
+}
+export function exposedLightPosition(map,{x,y,z,w=1,d=1,h=1,angle=0,owner=null,liquid=false},space=lightSpace(map)){
+ const c=Math.cos(angle),s=Math.sin(angle);
+ const sides=[[c,s,0,w/2],[-c,-s,0,w/2],[-s,c,0,d/2],[s,-c,0,d/2],[0,0,-1,h/2],[0,0,1,h/2]];
+ const directions=liquid?[sides[5],...sides.slice(0,4),sides[4]]:sides;
+ let best=null,bestScore=-1;
+ for(const [dx,dy,dz,extent]of directions){
+  const distance=extent+.14,px=x+dx*distance,py=y+dy*distance,pz=z+dz*distance;
+  if(!space.open(px,py,pz,owner))continue;
+  let score=0;
+  for(const extra of [.35,.85,1.6,2.8]){
+   if(!space.open(px+dx*extra,py+dy*extra,pz+dz*extra,owner))break;
+   score++;
+  }
+  if(score>bestScore){bestScore=score;best={x:px,y:py,z:pz};if(score===4)break}
+ }
+ return best;
+}
+export function blockLightSources(map,space=lightSpace(map)){
  if(map.blockLighting?.enabled===false||map.blockLighting?.power===0)return[];
- const power=map.blockLighting?.power??1,radius=map.blockLighting?.radius??5;
+ const power=map.blockLighting?.power??1,radius=map.blockLighting?.radius??5,groups=[...space.hidden].sort().join('|');
  let e=emitterCache.get(map);
- if(!e||e.blocks!==map.blocks||e.heights!==map.blockHeights||e.revision!==map.blockRevision||e.build!==map.buildRevision||e.power!==power||e.radius!==radius||!Number.isFinite(map.blockRevision)){
+ if(!e||e.blocks!==map.blocks||e.heights!==map.blockHeights||e.ground!==map.ground||e.blockGroups!==map.blockGroups||e.objects!==map.objects||e.chunks!==map.chunks||e.chunkCount!==map.chunks.length||e.revision!==map.blockRevision||e.build!==map.buildRevision||e.groups!==groups||e.power!==power||e.radius!==radius||!Number.isFinite(map.blockRevision)){
   const sources=[];
-  for(let[k,column]of Object.entries(map.blocks||{})){
-   const [x,y]=k.split(',').map(Number);
-   for(let[z,kind]of Object.entries(column)){
-    if(!BLOCKS[kind]?.emissive)continue;z=+z;const height=blockSize(map,x,y,z);
-    const face=lightFaces.find(([dx,dy,dz])=>!BLOCKS[blockAt(map,x+dx,y+dy,dz>0?z+height+.001:dz<0?z-.001:z+height/2)]?.opaque);
-    if(!face)continue;const [dx,dy,dz]=face;
-    sources.push({x:x+.5+dx*.56,y:y+.5+dy*.56,z:z+height/2+dz*(height/2+.06),power,radius,color:BLOCKS[kind].accent||BLOCKS[kind].top,block:true,owner:null,secondary:false});
+  for(const [k,column]of Object.entries(map.blocks||{})){
+   const [x,y]=k.split(',').map(Number);if(!activeCell(map,x,y))continue;
+   for(const [base,kind]of Object.entries(column)){
+    const z=+base,id=k+','+z;
+    if(!BLOCKS[kind]?.emissive||space.hidden.has(map.blockGroups?.[id]))continue;
+    const h=blockSize(map,x,y,z),position=exposedLightPosition(map,{x:x+.5,y:y+.5,z:z+h/2,h,liquid:kind==='lava'},space);
+    if(!position)continue;
+    sources.push({...position,power,radius,color:BLOCKS[kind].accent||BLOCKS[kind].top,block:true,owner:null,sourceId:'voxel:'+id,secondary:false});
    }
   }
-  e={blocks:map.blocks,heights:map.blockHeights,revision:map.blockRevision,build:map.buildRevision,power,radius,sources};emitterCache.set(map,e);
+  e={blocks:map.blocks,heights:map.blockHeights,ground:map.ground,blockGroups:map.blockGroups,objects:map.objects,chunks:map.chunks,chunkCount:map.chunks.length,revision:map.blockRevision,build:map.buildRevision,groups,power,radius,sources};emitterCache.set(map,e);
  }
- // With <=128 emitters the original ordering by distance is still preserved.
- const actors=map.objects.filter(o=>['hero','npc','enemy'].includes(o.type)),targets=actors.length?actors:[{x:map.width/2,y:map.height/2}];
- const score=s=>{let nearest=Infinity;for(const a of targets){const d=(a.x-s.x)**2+(a.y-s.y)**2;if(d<nearest)nearest=d}return nearest};
- return e.sources.map(source=>({source,score:score(source)})).sort((a,b)=>a.score-b.score).slice(0,128).map(entry=>entry.source);
+ // Keep all exposed emitters. Tactical sampling is already spatially indexed.
+ return e.sources;
 }

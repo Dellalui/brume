@@ -60,6 +60,30 @@ export function selectLocalLights(sources,anchor,viewer,previous=[],limit=8){
  if(limit<=0)return [];return [...(stable?[stable]:[]),...topLights(sources,limit-(stable?1:0),s=>s&&s!==stable&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0,score,id,(a,b)=>a.score-b.score||a.tie.localeCompare(b.tie))];
 }
 
+// Direct illumination and cube shadows have independent budgets.
+export const POINT_LIGHT_LIMIT=8;
+export const lightSourceId=s=>s.sourceId??(s.owner!=null?'object:'+s.owner:[s.x,s.y,s.z,s.secondary,s.color].join('|'));
+export function selectRenderLights(sources,anchor,viewer,previous=[],shadowLimit=4,limit=POINT_LIGHT_LIMIT,visible=()=>true){
+ const valid=s=>s&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0&&s.radius>0;
+ const prior=new Set(previous.filter(Boolean).map(lightSourceId)),priorShadow=new Set(previous.slice(0,shadowLimit).filter(Boolean).map(lightSourceId));
+ const distance=s=>Math.hypot(s.x-viewer.x,s.y-viewer.y,Number.isFinite(viewer.z)?(s.z??.85)-viewer.z:0);
+ const score=(s,old)=>distance(s)-(s.radius||0)-(old.has(lightSourceId(s))?2:0)+Number(!!s.secondary)*4;
+ const compare=(a,b)=>a.score-b.score||a.tie.localeCompare(b.tie);
+ const chosen=[],ids=new Set(),add=s=>{if(s&&!ids.has(lightSourceId(s))){chosen.push(s);ids.add(lightSourceId(s))}};
+ if(limit<=0)return [];
+ const n=Math.min(shadowLimit,limit);
+ if(n>0)add(selectSceneLights(sources.filter(valid),anchor,1)[0]);
+ for(const s of topLights(sources,n-chosen.length,s=>valid(s)&&!ids.has(lightSourceId(s)),s=>score(s,priorShadow),lightSourceId,compare))add(s);
+ for(const s of topLights(sources,limit-chosen.length,s=>valid(s)&&!ids.has(lightSourceId(s)),s=>score(s,prior)+(visible(s)?0:16),lightSourceId,compare))add(s);
+ const stable=(list,offset)=>{
+  const byId=new Map(list.map(s=>[lightSourceId(s),s])),out=Array(list.length).fill(null);
+  for(let i=0;i<out.length;i++){const old=previous[offset+i],id=old&&lightSourceId(old);if(id&&byId.has(id)){out[i]=byId.get(id);byId.delete(id)}}
+  const remaining=byId.values();return out.map(s=>s||remaining.next().value);
+ };
+ if(n>0&&chosen.length)return [chosen[0],...stable(chosen.slice(1,n),1),...stable(chosen.slice(n),n)];
+ return stable(chosen,0);
+}
+
 // Keep the original shadow resolutions and light budgets. Only refresh
 // shadow maps whose light volume intersects changed caster bounds.
 // Directional shadows conservatively include every local caster change.
