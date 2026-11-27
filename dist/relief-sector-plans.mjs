@@ -11,8 +11,11 @@ export function createReliefSectorPlans(){
  let state=null,builds=0,hits=0;
  function build(opts,scope,occ,region,origin,size,cut,edit,imageKey){
   const map=opts.map,epoch=opts.terrainEpoch,slice=opts.blockSlice??32;
+  // New and legacy maps may omit revision counters. Impact tokens use zero
+  // for missing counters, so compare and store the same canonical values.
+  const blockRevision=map.blockRevision||0,buildRevision=map.buildRevision||0;
   const context=JSON.stringify([region?.key??null,origin.x,origin.y,size.x,size.y,cut,slice,opts.mode,map.width,map.height,imageKey,map.groups.map(g=>[g.id,g.visible])]);
-  const useLocal=state&&state.map===map&&state.context===context&&edit?.map===map&&edit.from===state.epoch&&edit.to===epoch&&edit.blockRevision===map.blockRevision&&edit.buildRevision===map.buildRevision&&edit.previousBlockRevision===state.blockRevision&&edit.previousBuildRevision===state.buildRevision;
+  const useLocal=state&&state.map===map&&state.context===context&&edit?.map===map&&edit.from===state.epoch&&edit.to===epoch&&edit.blockRevision===blockRevision&&edit.buildRevision===buildRevision&&edit.previousBlockRevision===state.blockRevision&&edit.previousBuildRevision===state.buildRevision;
   const dirty=new Set(useLocal?edit.sectors:[]);
   if(useLocal){
    for(const id of edit.changes.voxels){const [x,y]=id.split(',').map(Number);dirty.add(sector(x,y))}
@@ -72,7 +75,7 @@ export function createReliefSectorPlans(){
    }
    for(const plan of reliefPlan(all,occ.fullUnits||new Set(),cut,opaque,false))plans.push({...plan,signature:reliefSignature(plan.cells)});
   }
-  state={map,epoch,blockRevision:map.blockRevision,buildRevision:map.buildRevision,context,entries,objectSectors,specialGroups};
+  state={map,epoch,blockRevision,buildRevision,context,entries,objectSectors,specialGroups};
   return {groups:new Map(specialGroups),plans,earth:new Map([...entries].filter(([,e])=>e.earth.length).map(([k,e])=>[k,e.earth]))};
  }
  return {build,reset(){state=null},stats:()=>({reliefSectorBuilds:builds,reliefSectorHits:hits})};

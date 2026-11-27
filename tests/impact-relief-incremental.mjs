@@ -13,6 +13,7 @@ const meshes=renderer=>new Map(renderer.debug().reliefGroup.children.filter(m=>m
 const snapshot=renderer=>[...meshes(renderer)].sort(([a],[b])=>a.localeCompare(b)).map(([k,m])=>[k,m.count,Array.from(m.instanceMatrix.array.slice(0,m.count*16)),m.userData.blocks.map(b=>[b.id??null,b.x,b.y,b.z,b.h])]);
 const earth=renderer=>renderer.debug().reliefGroup.children.filter(m=>m.userData.earth&&!m.userData.cutOverlay);
 const check=()=>{const {r:fresh}=fixture();fresh.render(opts);assert.deepEqual(snapshot(r),snapshot(fresh),'local plans match complete fresh renderer');assert.deepEqual(earth(r).flatMap(m=>Array.from(m.instanceMatrix.array.slice(0,m.count*16))).sort((a,b)=>a-b),earth(fresh).flatMap(m=>Array.from(m.instanceMatrix.array.slice(0,m.count*16))).sort((a,b)=>a-b));fresh.dispose()};
+assert.equal(map.buildRevision,undefined,'fresh map omits the optional build revision');
 r.render(opts);const initial=r.stats(),before=meshes(r),remoteEarth=earth(r).find(m=>m.count>0);assert(remoteEarth);check();
 function hit(point,power){
  let token;const result=applyImpactBatch(map,[{point,item:{power}}],W,()=>token=r.beginImpactEdit(map,opts.terrainEpoch));assert(result.changed);
