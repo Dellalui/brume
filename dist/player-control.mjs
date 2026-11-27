@@ -5,17 +5,16 @@ export const headingFromCamera=angle=>W.mod(-angle-Math.PI/4,W.TAU);
 export const cameraFromHeading=heading=>W.mod(-heading-Math.PI/4,W.TAU);
 export const explorationRadius=actor=>W.clamp(Number(actor.vision?.far)||64,12,96);
 export function visionStatus(actor,point){const p=W.center(actor),distance=Math.hypot(point.x-p.x,point.y-p.y),range=actor.vision?.range||12;return{distance,range,outside:distance>range+.001}}
-import {boxesNear,cameraBoxEntry} from './navigation.mjs';
+import {boxesNear} from './navigation.mjs';
 export function createPlayerMotion(){return {id:null,vy:0,grounded:false,crouched:false,jumpHeld:false}}
 export function walkPlayer(map,actor,angle,forward,side,dt,speed=3.5,state=createPlayerMotion(),input={}){
  if(!actor||actor.locked||map.groups?.find(g=>g.id===actor.group)?.locked||map.combat?.active)return false;
  if(state.id!==actor.id){Object.assign(state,createPlayerMotion(),{id:actor.id})}
  dt=Math.min(.05,Math.max(0,dt));const p=W.center(actor),base=actor.voxelZ??W.terrainSurface(actor,map),height=actor.bodyHeight||actor.height||1.8,r=Math.min(.45,Math.max(.23,(actor.w||1)*.28));
- const boxes=boxesNear(map,{x:p.x,y:base,z:p.y},Math.max(3,height+2),actor.id,null,true);
+ const boxes=boxesNear(map,{x:p.x,y:base,z:p.y},Math.max(2,r+1),actor.id,null,true);for(const b of boxes){b.c=Math.cos(b.angle||0);b.s=Math.sin(b.angle||0)}
  let x=p.x,y=p.y,z=base;
- const clear=(x,y,z,h)=>W.activeCell(map,x-r,y-r)&&W.activeCell(map,x+r,y+r)&&!boxes.some(b=>cameraBoxEntry({x,y:z+h/2,z:y},{x,y:z+h/2,z:y},{...b,y:b.y-h/2+.001,h:b.h+h-.002},r)===0);
  // Horizontal margin only; vertical body span is checked explicitly.
- const free=(x,y,z,h)=>W.activeCell(map,x-r,y-r)&&W.activeCell(map,x+r,y+r)&&W.activeCell(map,x-r,y+r)&&W.activeCell(map,x+r,y-r)&&!boxes.some(b=>{if(z+h<=b.y+.001||z>=b.y+b.h-.001)return false;const c=Math.cos(b.angle||0),s=Math.sin(b.angle||0),u=(x-b.x)*c+(y-b.z)*s,v=-(x-b.x)*s+(y-b.z)*c;return Math.abs(u)<b.w/2+r-.001&&Math.abs(v)<b.d/2+r-.001});
+ const free=(x,y,z,h)=>W.activeCell(map,x-r,y-r)&&W.activeCell(map,x+r,y+r)&&W.activeCell(map,x-r,y+r)&&W.activeCell(map,x+r,y-r)&&!boxes.some(b=>{if(z+h<=b.y+.001||z>=b.y+b.h-.001)return false;const c=b.c,s=b.s,u=(x-b.x)*c+(y-b.z)*s,v=-(x-b.x)*s+(y-b.z)*c;return Math.abs(u)<b.w/2+r-.001&&Math.abs(v)<b.d/2+r-.001});
  state.crouched=!!input.crouch||!free(x,y,z,height);
  const h=state.crouched?height*.68:height;
  const supported=(x,y,z)=>!free(x,y,z-.06,h);
