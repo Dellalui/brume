@@ -18,7 +18,7 @@ import {movementTarget,stepAltitude} from './movement-target.mjs';
 import {createFrameMeter} from './frame-meter.mjs';
 import {setText,setHidden,setValue,setData,setAttr} from './ui-values.mjs';
 import {expireEffects,launchEffect,effectEnvelope} from './effect-layer.mjs';
-import {THROW_ITEMS,throwConfig,validImpact,planImpact,applyImpact,createThrowQueue} from './throw-effects.mjs';
+import {THROW_ITEMS,throwConfig,materialHardness,validImpact,planImpact,applyImpact,createThrowQueue} from './throw-effects.mjs';
 import {renderer} from './scene.mjs';
 import {rememberInspector,organizeInspector} from './interface.mjs';
 import {mountWorkspace,syncDockState,organizeSceneSettings,applyGraphicsProfile,cameraSnapshot,normalizeSearch} from './workspace-ui.mjs';
@@ -369,7 +369,7 @@ function toggleInventory(force){if(viewMode!=='mj')return;stopCreativeStroke();c
 function renderHeldLiquid(){const item=heldItem(),root=$('#heldLiquidSettings');if(!root)return;mountLiquidControls(root,item?.kind==='block'?item.material:null,item?.liquidStyle,style=>{item.liquidStyle=style;queueSave();renderCreative();creativePreview()});}
 function openCreativeSettings(){creativeCategory='settings';inventoryKey='';toggleInventory(true);renderHeldLiquid()}
 function itemSymbol(item){if(item.kind==='block')return'▦';if(item.kind==='door')return'▥';if(item.kind==='schema')return'▧';if(item.kind==='selection')return'⌗';if(item.kind==='inspect')return'⌖';if(item.kind==='brush')return'▧';if(item.kind==='pipette')return'◈';if(item.kind==='frame')return'▣';if(item.kind==='fogbrush')return'◌';if(item.kind==='throw')return throwConfig(item).symbol;return icon({type:item.type})}
-function canvasItem(item){return {item,name:item.type==='tree'?({oak:'Chêne',pine:'Pin',birch:'Bouleau',willow:'Saule'}[item.variant]||C.itemName(item,world)):C.itemName(item,world),symbol:itemSymbol(item),color:item.kind==='throw'?throwConfig(item).color:item.kind==='block'?(W.BLOCKS[item.material]?.top||'#81977b'):null,block:item.kind==='block',thumbnail:W.ASSETS?.[item.type]?.thumbnail?'./assets/kenney/'+item.type+'.png':null}}
+function canvasItem(item){const block=item.kind==='block',material=block?W.BLOCKS[item.material]:null,liquid=block&&['water','lava'].includes(item.material)?normalizeLiquidStyle(item.material,item.liquidStyle):null;return {item,name:item.type==='tree'?({oak:'Chêne',pine:'Pin',birch:'Bouleau',willow:'Saule'}[item.variant]||C.itemName(item,world)):C.itemName(item,world),symbol:itemSymbol(item),color:item.kind==='throw'?throwConfig(item).color:material?.top||null,block,material,liquid,hardness:block?materialHardness(item.material):null,topTexture:block?surfaceDefinition(item.material,'top'):null,sideTexture:block?surfaceDefinition(item.material,'side'):null,thumbnail:W.ASSETS?.[item.type]?.thumbnail?'./assets/kenney/'+item.type+'.png':null}}
 function assignSlot(item,index=C.initBuilder(world).active){world.builder.slots[index]=structuredClone(item);world.builder.active=index;tool='creative';adding=null;drawBrush=null;renderCreative();queueSave();creativePreview();}
 function inventoryEntries(){
  if(creativeCategory==='blocks'){const entries=Object.entries(W.BLOCKS).filter(([id,b])=>inventoryFamily==='all'||b.category===inventoryFamily).map(([material])=>({kind:'block',material,w:1,d:1,h:1,yaw:0,step:1,shape:'box'}));return entries.flatMap(item=>['water','lava'].includes(item.material)?LIQUID_PRESETS.filter(p=>p.kind===item.material).map(p=>({...item,liquidStyle:normalizeLiquidStyle(p.kind,p)})):[item]);}
