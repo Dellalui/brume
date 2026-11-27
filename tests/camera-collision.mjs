@@ -24,6 +24,35 @@ camera=perspectiveCamera(map,actor,1600,900);outside(camera);assert(camera.posit
 camera=perspectiveCamera(map,actor,1600,900);assert(camera.position.y<2);assert(camera.position.x>10&&camera.position.x<11&&camera.position.z>10&&camera.position.z<11);
 // A single large fly input must not tunnel through a wall; water is still passable.
 ({map,actor}=make());W.setBlock(map,10,11,1,'stone');let from={x:10.5,y:1.5,z:10.5},to={x:10.5,y:1.5,z:13};let clipped=sweepCameraMotion(map,from,to);assert(clipped.z<11&&clipped.z>10.5);W.setBlock(map,10,11,1,'water');assert.deepEqual(sweepCameraMotion(map,from,to),to);
+// MJ flight must not snag on the artificial safety skins of adjacent
+// ceiling/floor voxels, including seams in half-height roofs.
+({map,actor}=make());
+for(let x=8;x<=16;x++)for(let z=8;z<=16;z++)W.setBlock(map,x,z,2,'stone');
+const close=(a,b,message)=>assert(Math.abs(a.x-b.x)<1e-6&&Math.abs(a.y-b.y)<1e-6&&Math.abs(a.z-b.z)<1e-6,message);
+for(const y of [1.82,1.95,2,3,3.05,3.18,3.22]){
+ const a={x:10.5,y,z:10.5},b={x:14.5,y,z:13.5};
+ close(sweepCameraMotion(map,a,b),b,'MJ glides along ceiling or roof at height '+y);
+ close(sweepCameraMotion(map,b,a),a,'reverse direction glides over the same seams');
+}
+// Near-contact exemptions must never allow crossing the actual solid.
+for(const [y,target]of [[3.05,1.5],[1.95,3.5]]){
+ const a={x:10.5,y,z:10.5};
+ const result=sweepCameraMotion(map,a,{...a,y:target});
+ assert(y>3?result.y>=3:result.y<=2,'vertical motion cannot penetrate the ceiling');
+}
+W.setBlock(map,12,10,3,'stone');
+const roofStart={x:10.5,y:3.05,z:10.5},roofEnd={x:14.5,y:3.05,z:10.5};
+assert(sweepCameraMotion(map,roofStart,roofEnd).x<12,'wall standing on roof still blocks forward flight');
+W.setBlock(map,12,10,3,null);
+for(let x=8;x<=16;x++)for(let z=8;z<=16;z++)W.setBlock(map,x,z,2,'stone',.5);
+for(const y of [2.5,2.55,1.95]){
+ const a={x:10.5,y,z:10.5},b={x:14.5,y,z:13.5};close(sweepCameraMotion(map,a,b),b,'half-height roof seam');
+}
+// The same contact rule applies to consecutive placed blocks.
+({map,actor}=make());for(let x=8;x<=15;x++)map.objects.push({...W.newObject('block',x,10,'roof-'+x),material:'stone',baseZ:2,w:1,d:1,height:1});
+for(const y of [1.95,3.05]){
+ const a={x:9.5,y,z:10.5},b={x:14.5,y,z:10.5};close(sweepCameraMotion(map,a,b),b,'placed ceiling seam');
+}
 // Free MJ flight is still independently positionable (construction mode).
 Object.assign(map.camera,{mode:'fly',fly:{x:12,y:-4,z:12}});assert.equal(perspectiveCamera(map,actor,1200,800).position.y,-4);
 console.log('PASS: swept camera clearance, scout offset, glass, rotated block, lava, low ceiling and fly movement.');

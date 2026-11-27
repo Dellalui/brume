@@ -23,14 +23,17 @@ export function cameraBoxEntry(a,b,box,radius=0){
  return enter;
 }
 function clearPoint(p,boxes,r){return !boxes.some(b=>cameraBoxEntry(p,p,b,r)===0)}
-function clipFraction(a,b,boxes,r){
+function clipFraction(a,b,boxes,r,slideContacts=false){
  let t=1;const length=a.distanceTo(b);if(length<EPS)return 1;
  for(const box of boxes){
   const hit=cameraBoxEntry(a,b,box,r);if(hit>=t)continue;
   // When already touching the safety margin, allow motion away from it,
   // but never allow that exemption to carry the camera through a solid.
-  if(hit===0&&cameraBoxEntry(a,b,box,0)===Infinity){
-   if(cameraBoxEntry(b,b,box,r)===Infinity)continue;
+  // MJ may enter the safety skin of an adjacent box while gliding along
+   // a continuous surface. Still require a clear sweep of the real solid
+   // and a separating axis that is stationary or moving outward.
+   if((hit===0||slideContacts)&&cameraBoxEntry(a,b,box,0)===Infinity){
+   if(hit===0&&cameraBoxEntry(b,b,box,r)===Infinity)continue;
    const c=Math.cos(box.angle||0),s=Math.sin(box.angle||0),p=[(a.x-box.x)*c+(a.z-box.z)*s,a.y-box.y,-(a.x-box.x)*s+(a.z-box.z)*c],q=[(b.x-box.x)*c+(b.z-box.z)*s,b.y-box.y,-(b.x-box.x)*s+(b.z-box.z)*c];
    const lo=[-box.w/2,-0,-box.d/2],hi=[box.w/2,box.h,box.d/2];
    if(p.some((v,i)=>v<=lo[i]&&q[i]<=v||v>=hi[i]&&q[i]>=v))continue;
@@ -103,7 +106,7 @@ export function sweepCameraMotion(map,from,to,liquids=null){
  // Sweep each axis in short increments so a wall stops only the blocked
  // component, rather than freezing all motion when the camera grazes a corner.
  const count=Math.max(1,Math.ceil(delta.length()/.25)),step=delta.clone().multiplyScalar(1/count);
- for(let i=0;i<count;i++)for(const axis of ['x','z','y']){if(Math.abs(step[axis])<EPS)continue;const end=a.clone();end[axis]+=step[axis];a.lerp(end,clipFraction(a,end,boxes,radius))}
+ for(let i=0;i<count;i++)for(const axis of ['x','z','y']){if(Math.abs(step[axis])<EPS)continue;const end=a.clone();end[axis]+=step[axis];a.lerp(end,clipFraction(a,end,boxes,radius,true))}
  return {x:a.x,y:a.y,z:a.z};
 }
 export function perspectiveCamera(map,actor,width,height,{liquids=null}={}){
