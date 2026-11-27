@@ -150,7 +150,7 @@ export function createChunkOcclusionCache(){
   return {state:s,map,epoch,context:context(map),blockRevision:map.blockRevision||0,buildRevision:map.buildRevision||0,objectCount:map.objects.length};
  }
  function finishRemoval(map,epoch,token,changes,onDirty){
-  if(!token||token.state!==state||token.map!==map||!changes)return false;
+  if(!token||token.state!==state||token.map!==map||!changes||changes.addedVoxels?.length)return false;
   const s=state;
   if(map.chunks!==s.chunks||map.blocks!==s.blocks||context(map)!==token.context||
      epoch!==token.epoch+1||(map.buildRevision||0)!==token.buildRevision+1||

@@ -94,7 +94,7 @@ function impactIndex(map,W){
 // The DDA traverses crossed XY cells, including half-height voxel intervals;
 // a solid object contributes once, not once per crossed cell. These are
 // arbitrary gameplay attenuation units, not physical blast simulation.
-function createImpactSampler(map,point,W,index,placed){
+function createImpactSampler(map,point,W,index,placed,contact){
  const columns=new Map(),placedColumns=new Map();
  const sourceContains=b=>b.qx<=EPS&&b.qy<=EPS&&b.qz<=EPS;
  const records=(x,y)=>{
@@ -103,7 +103,7 @@ function createImpactSampler(map,point,W,index,placed){
   for(const [base,material]of Object.entries(map.blocks?.[k]||{})){
    const z=Number(base);if(!Number.isFinite(z)||!W.BLOCKS[material])continue;
    const id=k+','+z,h=W.blockSize(map,x,y,z),b=boxInfo(point,x,y,z,1,1,h);
-   list.push({id,x,y,z,h,material,b,locked:index.locks.has(map.blockGroups?.[id]),solid:W.BLOCKS[material].solid!==false,source:sourceContains(b),loss:materialHardness(material)*.35});
+   list.push({id,x,y,z,h,material,b,locked:index.locks.has(map.blockGroups?.[id]),solid:W.BLOCKS[material].solid!==false,source:sourceContains(b)&&!(contact?.kind==='voxel'&&contact.id===id),loss:materialHardness(material)*.35});
   }
   columns.set(k,list);return list;
  };
@@ -151,22 +151,25 @@ function createImpactSampler(map,point,W,index,placed){
 export function planImpact(map,point,item,W,shared=null){
  const cfg=throwConfig(item),plan={voxels:[],objects:[],ground:[],protectedCount:0,resistedCount:0,limited:false};
  if(!cfg.destroy||!validImpact(map,point,W))return plan;
- const index=shared||impactIndex(map,W),candidates=[],r=cfg.radius,shape=cfg.damageShape;
+ const index=shared||impactIndex(map,W),candidates=[],r=cfg.radius,shape=cfg.damageShape,contact=item?.contact;
+ const groundHit=contact?.kind==='ground'&&Array.isArray(contact.cell)&&contact.cell.length===2&&contact.cell.every(Number.isInteger)&&W.activeCell(map,...contact.cell);
+ const hitGround=groundHit?W.groundAt(map,...contact.cell):null,lateralGround=groundHit&&point.z<hitGround-EPS;
  const xmin=Math.max(0,Math.floor(point.x-r)),xmax=Math.min(map.width-1,Math.floor(point.x+r)),ymin=Math.max(0,Math.floor(point.y-r)),ymax=Math.min(map.height-1,Math.floor(point.y+r));
  const placed=[];
  for(const {o,b:bounds}of index.query(xmin,ymin,xmax+1,ymax+1)){
   const w=o.w??1,d=o.d??1,h=o.height??1,z=W.elevation(o,map);
   if(![o.x,o.y,z,w,d,h].every(Number.isFinite)||Math.min(w,d,h)<=0)continue;
   const b=boxInfo(point,o.x,o.y,z,w,d,h,o.facing||0);
-  placed.push({o,id:o.id,b,bounds,locked:index.locked(o),source:b.qx<=EPS&&b.qy<=EPS&&b.qz<=EPS,solid:W.BLOCKS[o.material]?.solid!==false,loss:materialHardness(o.material)*.35});
+  placed.push({o,id:o.id,b,bounds,locked:index.locked(o),source:b.qx<=EPS&&b.qy<=EPS&&b.qz<=EPS&&!(contact?.kind==='object'&&contact.id===o.id),solid:W.BLOCKS[o.material]?.solid!==false,loss:materialHardness(o.material)*.35});
  }
- const sampler=createImpactSampler(map,point,W,index,placed);
- function candidate(entry,material,distance,locked,tx,ty,tz){
+ const sampler=createImpactSampler(map,point,W,index,placed,contact);
+ function candidate(entry,material,distance,locked,tx,ty,tz,direct=false){
+  if(direct)distance=0; // direct contact is eligible even for a hollow shape
   if(distance>r)return;
   if(locked){plan.protectedCount++;return}
   const remaining=cfg.power-distance-materialHardness(material);
   if(remaining<0){plan.resistedCount++;return}
-  candidates.push({...entry,distance,remaining,tx,ty,tz});
+  candidates.push({...entry,distance,remaining,tx,ty,tz,direct});
  }
  for(let y=ymin;y<=ymax;y++)for(let x=xmin;x<=xmax;x++){
   if(!W.activeCell(map,x,y))continue;
@@ -175,37 +178,45 @@ export function planImpact(map,point,item,W,shared=null){
   if(shape==='cube'?Math.max(hx,hy)>r:hx*hx+hy*hy>r*r)continue;
   const ground=W.groundAt(map,x,y);
   if(ground>-16){
+   const directColumn=groundHit&&x===contact.cell[0]&&y===contact.cell[1],directTop=directColumn?Math.min(ground,Math.floor((point.z+EPS)*2)/2+.5):null;
    const first=impactVolumeDistance(point,shape,r,x,y,ground-.5,1,1,.5);
-   if(first<=r){
-    if(index.groundLocked(x,y))plan.protectedCount++;
-    else for(let z=ground;z>-16;z-=.5){
-     const distance=impactVolumeDistance(point,shape,r,x,y,z-.5,1,1,.5),remaining=cfg.power-distance-materialHardness('dirt');
-     if(remaining<0)break;
-     const target={kind:'ground',x,y,z,distance,remaining,tx:x+.5,ty:y+.5,tz:z-.25};
-     if(sampler.shielded(target,remaining)){plan.resistedCount++;break}
-     candidates.push(target);
+   // A cliff is implicit soil. On a lateral hit examine the half-layers
+   // within the local volume, even if its surface is high above the shot.
+   const canCutSide=lateralGround&&Number.isInteger(ground*2);
+   if(first<=r||directColumn||canCutSide){
+    if(index.groundLocked(x,y)){if(first<=r||directColumn||canCutSide&&point.z-r<ground)plan.protectedCount++}
+    else{
+     const top=canCutSide?Math.min(ground,Math.floor((point.z+r+.5)*2)/2):ground;
+     for(let z=top;z>-16&&(!canCutSide||z>=point.z-r-EPS);z-=.5){
+      const direct=directColumn&&z===directTop;
+      const distance=direct?0:impactVolumeDistance(point,shape,r,x,y,z-.5,1,1,.5),remaining=cfg.power-distance-materialHardness('dirt');
+      if(remaining<0){if(canCutSide)continue;break}
+      const target={kind:'ground',x,y,z,distance,remaining,tx:x+.5,ty:y+.5,tz:z-.25,direct,...(canCutSide?{lateral:true}:{})};
+      if(!direct&&sampler.shielded(target,remaining)){plan.resistedCount++;if(canCutSide)continue;break}
+      candidates.push(target);
+     }
     }
    }
   }
   for(const v of sampler.records(x,y)){
    const distance=volumeDistance(point,v.b,shape,r);
-   candidate({kind:'voxel',x,y,z:v.z,key:v.id,material:v.material,voxelId:v.id},v.material,distance,v.locked,x+.5,y+.5,v.z+v.h/2);
+   candidate({kind:'voxel',x,y,z:v.z,key:v.id,material:v.material,voxelId:v.id},v.material,distance,v.locked,x+.5,y+.5,v.z+v.h/2,contact?.kind==='voxel'&&contact.id===v.id);
   }
  }
  for(const v of placed){
-  const {o,b}=v,distance=volumeDistance(point,b,shape,r);
+  const {o,b}=v,direct=contact?.kind==='object'&&contact.id===o.id,distance=direct?0:volumeDistance(point,b,shape,r);
   if(distance>r)continue;
   // For a large placed block use its closest interior point, not a remote
   // center outside the local impact volume.
   const px=clamp(b.lx,-b.w/2+Math.min(.0001,b.w/4),b.w/2-Math.min(.0001,b.w/4)),py=clamp(b.ly,-b.d/2+Math.min(.0001,b.d/4),b.d/2-Math.min(.0001,b.d/4));
-  candidate({kind:'object',id:o.id,objectId:o.id},o.material,distance,v.locked,b.cx+px*b.c-py*b.s,b.cy+px*b.s+py*b.c,clamp(point.z,b.z+Math.min(.0001,b.h/4),b.z+b.h-Math.min(.0001,b.h/4)));
+  candidate({kind:'object',id:o.id,objectId:o.id},o.material,distance,v.locked,b.cx+px*b.c-py*b.s,b.cy+px*b.s+py*b.c,clamp(point.z,b.z+Math.min(.0001,b.h/4),b.z+b.h-Math.min(.0001,b.h/4)),direct);
  }
- candidates.sort((a,b)=>a.distance-b.distance||(b.z??0)-(a.z??0));
+ candidates.sort((a,b)=>Number(!!b.direct)-Number(!!a.direct)||a.distance-b.distance||(b.z??0)-(a.z??0));
  let accepted=0;
  for(const b of candidates){
-  if(b.kind!=='ground'&&sampler.shielded(b,b.remaining)){plan.resistedCount++;continue}
+  if(!b.direct&&b.kind!=='ground'&&sampler.shielded(b,b.remaining)){plan.resistedCount++;continue}
   if(accepted===MAX_REMOVALS){plan.limited=true;break}
-  accepted++;const {remaining,tx,ty,tz,voxelId,objectId,...hit}=b;
+  accepted++;const {remaining,tx,ty,tz,voxelId,objectId,direct,...hit}=b;
   (b.kind==='voxel'?plan.voxels:b.kind==='ground'?plan.ground:plan.objects).push(hit);
  }
  return plan;
@@ -231,7 +242,25 @@ export function applyImpact(map,plan,W,changes=null,shared=null){
  for(const [key,items]of groundByColumn){
   const {x,y}=items[0];if(!W.activeCell(map,x,y)||index.groundLocked(x,y))continue;
   let z=W.groundAt(map,x,y),n=0;
-  for(const b of items.sort((a,b)=>b.z-a.z))if(b.z===z&&z>-16){z=Math.max(-16,z-.5);n++}
+  const originalTop=z;
+  if(items.some(b=>b.lateral)&&Number.isInteger(z*2)){
+   const removed=new Set(items.map(b=>b.z).filter(top=>Number.isInteger(top*2)&&top<=z&&top>-16));
+   if(removed.size){
+    z=Math.min(...removed)-.5;n=removed.size;
+    map.ground??={};map.ground[key]=z;
+    // Materialize intact soil above the new implicit floor. Preserve upper
+    // layers rather than cutting an entire column just to open a side hole.
+    for(let base=z;base<originalTop;){
+     const top=base+.5;
+     if(removed.has(top)||W.blockAt(map,x,y,base+.25)){base=top;continue}
+     const material=originalTop===0&&top===0?'grass':'dirt';
+     const nextMaterial=originalTop===0&&top+.5===0?'grass':'dirt';
+     const height=top<originalTop&&!removed.has(top+.5)&&material===nextMaterial&&!W.blockAt(map,x,y,base+.75)?1:.5;
+     if(W.setBlock(map,x,y,base,material,height)){if(changes){changes.addedVoxels??=[];changes.addedVoxels.push(key+','+base)}}
+     base+=height;
+    }
+   }
+  }else for(const b of items.sort((a,b)=>b.z-a.z))if(b.z===z&&z>-16){z=Math.max(-16,z-.5);n++}
   if(n){map.ground??={};map.ground[key]=z;map.blockRevision=(map.blockRevision||0)+n;count+=n;if(changes){changes.ground+=n;for(let i=0;i<n;i++)changes.groundColumns?.push(key)}}
  }
  const ids=new Set(plan.objects.map(o=>o.id));
@@ -241,7 +270,7 @@ export function applyImpact(map,plan,W,changes=null,shared=null){
 // Preserve impact order and the per-impact removal/protection rules while
 // letting the editor commit one transaction for simultaneous hits.
 export function applyImpactBatch(map,impacts,W,beforeChange=()=>{},metrics=null){
- let changed=false,count=0,protectedCount=0,resistedCount=0,limited=0,destructive=0;const changes={voxels:[],objects:[],ground:0,groundColumns:[]};let index=null;
+ let changed=false,count=0,protectedCount=0,resistedCount=0,limited=0,destructive=0;const changes={voxels:[],objects:[],ground:0,groundColumns:[],addedVoxels:[]};let index=null;
  for(const {point,item} of impacts){
   if(item.destroy===false)continue;
   destructive++;const t=metrics?performance.now():0;index??=impactIndex(map,W);const plan=planImpact(map,point,item,W,index);if(metrics)metrics['calcul dégâts']=(metrics['calcul dégâts']||0)+performance.now()-t;
@@ -267,7 +296,7 @@ export function flightTrail(from,to,t,out=[],{linear=false,length=5}={}){
 export function createThrowQueue(namespace='throw'){
  let items=[],serial=0;
  const pointAt=(p,d)=>({x:p.from.x+p.direction.x*d,y:p.from.y+p.direction.y*d,z:p.from.z+p.direction.z*d});
- const notify=(p,onImpact)=>onImpact(p.to,{preset:p.config.id,power:p.config.power,destroy:p.config.destroy,damageShape:p.config.damageShape});
+ const notify=(p,onImpact)=>onImpact(p.to,{preset:p.config.id,power:p.config.power,destroy:p.config.destroy,damageShape:p.config.damageShape,...(p.contact?{contact:p.contact}:{})});
  return {
   fire(map,enabled,from,direction,item,W,now){
    if(!enabled||![from?.x,from?.y,from?.z,direction?.x,direction?.y,direction?.z,now].every(Number.isFinite))return false;
@@ -295,7 +324,7 @@ export function createThrowQueue(namespace='throw'){
      const next=Math.min(p.maximum,Math.max(p.travel,(now-p.started)*p.config.speed/1000));
      if(next>p.travel){
       const hit=traceProjectile(map,pointAt(p,p.travel),pointAt(p,next),p.W);
-      if(hit&&validImpact(map,hit.point,p.W)){p.travel+=(next-p.travel)*hit.t;p.to=hit.point;p.impactAt=p.started+p.travel/p.config.speed*1000;notify(p,onImpact)}
+      if(hit&&validImpact(map,hit.point,p.W)){p.travel+=(next-p.travel)*hit.t;p.to=hit.point;p.contact={kind:hit.kind,id:hit.id,cell:hit.cell};p.impactAt=p.started+p.travel/p.config.speed*1000;notify(p,onImpact)}
       else p.travel=next;
      }
      if(p.impactAt===null&&p.travel>=p.maximum){p.missed=true;continue}

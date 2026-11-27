@@ -35,7 +35,8 @@ function colliderIndex(map,W){
  index={objects:map.objects,length:map.objects.length,revision:map.buildRevision,bins,groups:new Map(map.groups.map(g=>[g.id,g]))};indices.set(map,index);return index;
 }
 function verticalEntry(z,d,min,max,lo,hi){
- if(Math.abs(d)<EPS)return z>min+EPS&&z<max-EPS?lo:Infinity;
+ // Half-open voxel intervals assign a shared horizontal seam to the upper block.
+ if(Math.abs(d)<EPS)return z>=min-EPS&&z<max-EPS?lo:Infinity;
  const a=(min-z)/d,b=(max-z)/d,enter=Math.max(lo,Math.min(a,b)),exit=Math.min(hi,Math.max(a,b));
  // Touching the entry at the end of a segment counts; moving away from
  // a face or grazing an edge does not.
@@ -94,5 +95,5 @@ export function traceProjectile(map,from,to,W){
  const point={x:from.x+d.x*best,y:from.y+d.y*best,z:from.z+d.z*best};
  // At an outer map/chunk edge, keep the impact inside the actual hit cell.
  if(!W.activeCell(map,point.x,point.y)&&hitCell){point.x=Math.max(hitCell[0]+EPS,Math.min(hitCell[0]+1-EPS,point.x));point.y=Math.max(hitCell[1]+EPS,Math.min(hitCell[1]+1-EPS,point.y))}
- return {point,t:Math.max(0,Math.min(1,best)),kind:hitKind,id:hitId};
+ return {point,t:Math.max(0,Math.min(1,best)),kind:hitKind,id:hitId,cell:hitCell};
 }
