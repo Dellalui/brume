@@ -432,11 +432,11 @@ function launchThrownEffect(point,item){
 function commitThrownImpact(point,item){
  if(mode!=='build'||viewMode!=='mj')return;
  const m=map(),plan=planImpact(m,point,item,W);let count=0;
- if(plan.voxels.length||plan.objects.length){
+ if(plan.voxels.length||plan.objects.length||plan.ground.length){
   stopCreativeStroke();
   change(()=>{count=applyImpact(m,plan,W);if(selection&&!m.objects.some(o=>o.id===selection))selection=null;settleBlockActors()});
  }
- if(item.destroy!==false)toast(count+' bloc(s) retiré(s) · '+plan.protectedCount+' protégé(s)'+(plan.limited?' · limite de 512 blocs par impact':''));
+ if(item.destroy!==false)toast(count+' bloc(s) ou couches de sol retirés · '+plan.protectedCount+' protégé(s) · '+plan.resistedCount+' résistant(s)'+(plan.limited?' · limite de 512 éléments par impact':''));
 }
 function creativePointerDown(e){
  if(!$('#creativeInventory').hidden)return true;if(document.pointerLockElement!==canvas){e.preventDefault?.();captureCreative();return true}const item=heldItem();if(e.button===1){sampleCreative();return true}
