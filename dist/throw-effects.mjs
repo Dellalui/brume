@@ -21,19 +21,39 @@ export function distanceToBox(point,x,y,z,w,d,h,angle=0){
 export function validImpact(map,point,W){
  return !!point&&[point.x,point.y,point.z].every(Number.isFinite)&&point.z>=-16.01&&point.z<=32.01&&W.activeCell(map,point.x,point.y);
 }
+// Gameplay resistance in arbitrary power units; no real-world explosive model.
+export const MATERIAL_HARDNESS=Object.freeze({grass:.6,dirt:.6,sand:.35,gravel:.8,clay:.9,snow:.25,mud:.4,stone:1.5,cobble:1.4,granite:2.8,marble:2.2,slate:1.8,coal:1.6,iron:3,copper:2.4,gold:2,crystal:2.5,oak:1.2,pinewood:1,birchwood:1,planks:.8,darkplanks:.8,paleplanks:.8,brick:1.6,stonebrick:2,sandstone:1.1,tile:.9,leaves:.2,darkleaves:.2,hay:.2,cactus:.5,ice:.7,glass:.35,water:.15,lava:.15,basalt:3,infernal:2.5,ash:.3,magma:2,obsidian:5,soul:.6,hellbrick:2.5,glowstone:1.2});
+export function materialHardness(material){return MATERIAL_HARDNESS[material]??1.2}
+function canBreak(power,distance,material){return power-distance>=materialHardness(material)}
+function groundProtected(map,x,y,locks){return Object.entries(map.blockGroups||{}).some(([k,id])=>locks.has(id)&&k.startsWith(x+','+y+','))||(map.objects||[]).some(o=>(o.locked||o.protected||locks.has(o.group))&&o.type==='block'&&distanceToBox({x:x+.5,y:y+.5,z:0},o.x,o.y,0,o.w??1,o.d??1,1,o.facing||0)===0)}
 export function planImpact(map,point,item,W){
- const cfg=throwConfig(item),plan={voxels:[],objects:[],protectedCount:0,limited:false};
+ const cfg=throwConfig(item),plan={voxels:[],objects:[],ground:[],protectedCount:0,resistedCount:0,limited:false};
  if(!cfg.destroy||!validImpact(map,point,W))return plan;
  const lockedGroups=new Set((map.groups||[]).filter(g=>g.locked||g.protected).map(g=>g.id)),candidates=[],r=cfg.radius;
  const xmin=Math.max(0,Math.floor(point.x-r)),xmax=Math.min(map.width-1,Math.floor(point.x+r)),ymin=Math.max(0,Math.floor(point.y-r)),ymax=Math.min(map.height-1,Math.floor(point.y+r));
  for(let y=ymin;y<=ymax;y++)for(let x=xmin;x<=xmax;x++){
   if(!W.activeCell(map,x,y))continue;
+  const ground=W.groundAt(map,x,y);
+  if(ground> -16){
+   const distance=distanceToBox(point,x,y,ground-1,1,1,1);
+   if(distance<=r){
+    if(groundProtected(map,x,y,lockedGroups))plan.protectedCount++;
+    else {
+     for(let z=ground;z> -16;z-=.5){
+      const d=distanceToBox(point,x,y,z-.5,1,1,.5);
+      if(!canBreak(cfg.power,d,'dirt'))break;
+      candidates.push({kind:'ground',x,y,z,distance:d});
+     }
+    }
+   }
+  }
   for(const [base,material]of Object.entries(map.blocks?.[x+','+y]||{})){
    const z=Number(base);if(!Number.isFinite(z)||!W.BLOCKS[material])continue;
    const distance=distanceToBox(point,x,y,z,1,1,W.blockSize(map,x,y,z));
    if(distance>r)continue;
    const key=x+','+y+','+z;
    if(lockedGroups.has(map.blockGroups?.[key])){plan.protectedCount++;continue}
+   if(!canBreak(cfg.power,distance,material)){plan.resistedCount++;continue}
    candidates.push({kind:'voxel',x,y,z,key,distance,material});
   }
  }
@@ -44,11 +64,12 @@ export function planImpact(map,point,item,W){
   const distance=distanceToBox(point,o.x,o.y,z,w,d,h,o.facing||0);
   if(distance>r)continue;
   if(o.locked||o.protected||lockedGroups.has(o.group)){plan.protectedCount++;continue}
+  if(!canBreak(cfg.power,distance,o.material)){plan.resistedCount++;continue}
   candidates.push({kind:'object',id:o.id,distance});
  }
- candidates.sort((a,b)=>a.distance-b.distance);
+ candidates.sort((a,b)=>a.distance-b.distance||(b.z??0)-(a.z??0));
  plan.limited=candidates.length>MAX_REMOVALS;
- for(const b of candidates.slice(0,MAX_REMOVALS))(b.kind==='voxel'?plan.voxels:plan.objects).push(b);
+ for(const b of candidates.slice(0,MAX_REMOVALS))(b.kind==='voxel'?plan.voxels:b.kind==='ground'?plan.ground:plan.objects).push(b);
  return plan;
 }
 export function applyImpact(map,plan,W){
@@ -59,6 +80,10 @@ export function applyImpact(map,plan,W){
   if(locks.has(map.blockGroups?.[b.key])||map.blocks?.[b.x+','+b.y]?.[b.z]!==b.material)continue;
   if(W.setBlock(map,b.x,b.y,b.z,null)){if(map.blockGroups)delete map.blockGroups[b.key];count++}
  }
+ for(const b of (plan.ground||[]).slice().sort((a,b)=>b.z-a.z)){
+  if(groundProtected(map,b.x,b.y,locks)||W.groundAt(map,b.x,b.y)!==b.z)continue;
+  if(W.digGround(map,b.x,b.y,.5))count++;
+ }
  const ids=new Set(plan.objects.map(o=>o.id));
  if(ids.size){const before=map.objects.length;map.objects=map.objects.filter(o=>!ids.has(o.id)||o.type!=='block'||o.locked||o.protected||locks.has(o.group));count+=before-map.objects.length}
  return count;
@@ -66,6 +91,10 @@ export function applyImpact(map,plan,W){
 export function flightPosition(from,to,t){
  t=Math.max(0,Math.min(1,t));const arc=Math.sin(t*Math.PI)*.28;
  return {x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t,z:from.z+(to.z-from.z)*t+arc};
+}
+export function flightTrail(from,to,t){
+ const distance=throwDistance(from,to),span=Math.min(1,5/Math.max(.001,distance));
+ return Array.from({length:24},(_,i)=>flightPosition(from,to,t-span*(i+1)/24));
 }
 export function createThrowQueue(){
  let items=[],serial=0;
@@ -81,7 +110,7 @@ export function createThrowQueue(){
    const visible=[];
    for(const p of items){
     if(p.impactAt===null&&now>=p.started+p.duration){p.impactAt=p.started+p.duration;onImpact(p.to,{preset:p.config.id,power:p.config.power,destroy:p.config.destroy})}
-    if(p.impactAt===null){visible.push({id:p.id,config:p.config,position:flightPosition(p.from,p.to,(now-p.started)/p.duration),tail:flightPosition(p.from,p.to,(now-p.started)/p.duration-.15),phase:'flight',age:0});continue}
+    if(p.impactAt===null){visible.push({id:p.id,config:p.config,position:flightPosition(p.from,p.to,(now-p.started)/p.duration),tail:flightPosition(p.from,p.to,(now-p.started)/p.duration-.15),trail:flightTrail(p.from,p.to,(now-p.started)/p.duration),phase:'flight',age:0});continue}
     const age=(now-p.impactAt)/1000;
     for(const layer of p.config.layers){const elapsed=age-layer.delay;if(!layer.enabled||elapsed<0||elapsed>=layer.duration)continue;visible.push({id:p.id+':'+layer.id,config:{...p.config,id:layer.kind,color:layer.color,shape:layer.shape,strength:layer.strength,radius:p.config.radius*layer.size,duration:layer.duration},position:p.to,tail:p.to,phase:'impact',age:elapsed})}
    }
