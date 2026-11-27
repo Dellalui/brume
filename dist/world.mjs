@@ -1,3 +1,4 @@
+import {doorwayOccupied} from './door-interaction.mjs';
 import {lightCandidates} from './light-index.mjs';
 import {beamFactor,lightKind} from './carried-light.mjs';
 import {ASSETS} from './asset-catalog.mjs';
@@ -30,7 +31,7 @@ function segmentDistance(a,b,c,d){if(segmentHit(a,b,c,d)!==null)return 0;return 
 export function collisionBounds(o){if(o.type!=='tree')return bounds(o);let p=center(o),r=o.trunkRadius??.13;return{x:p.x-r,y:p.y-r,w:r*2,h:r*2}}
 export function screenStep(dx,dy,angle,tilt=.5){let best=null,score=-Infinity;for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++){if(!x&&!y)continue;let c=Math.cos(angle),s=Math.sin(angle),u=x*c-y*s,v=x*s+y*c,sx=u-v,sy=(u+v)*tilt,dot=(sx*dx+sy*dy)/(Math.hypot(sx,sy)*Math.hypot(dx,dy));if(dot>score){score=dot;best={x,y}}}return best}
 export const isDoor=o=>o?.type==='door'||o?.type==='build_door';
-export function canCloseDoor(map,door){let closed={...door,open:false,blocking:true};return !map.objects.some(o=>character(o)&&!cellFree(map,o.x,o.y,o,[closed]))}
+export function canCloseDoor(map,door){return !doorwayOccupied(map,door,{character,levelOf,elevation,center,actorCells})}
 function boxSegments(o){if(o.type!=='tree'){let ps=footprint(o);return ps.map((p,i)=>[p,ps[(i+1)%4]])}let b=collisionBounds(o),a={x:b.x,y:b.y},c={x:b.x+b.w,y:b.y},d={x:b.x+b.w,y:b.y+b.h},e={x:b.x,y:b.y+b.h};return[[a,c],[c,d],[d,e],[e,a]]}
 function containsPoint(p,o){let ps=boxSegments(o).map(s=>s[0]),sign=0;for(let i=0;i<4;i++){let n=cross(ps[i],ps[(i+1)%4],p);if(Math.abs(n)<1e-9)continue;let s=Math.sign(n);if(sign&&s!==sign)return false;sign=s}return true}
 export function obstacles(map,kind='blocking',level=map.editLevel||0){return map.objects.filter(o=>levelOf(o)===level&&(o[kind]||kind==='blocking'&&character(o)&&o.occupancy)&&!((o.type==='door'||o.type==='build_door')&&o.open)).flatMap(o=>kind==='blocking'&&character(o)&&o.occupancy?actorVolumes(o,map):[o])}

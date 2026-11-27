@@ -137,6 +137,18 @@ export function mountCanvasHUD(doc,api){
   const listX=r.x+r.w*.50,listW=r.w*.50-12,step=(r.h-44)/6;
   BODY_PARTS.forEach(([id,label],i)=>{const yy=r.y+38+step*i;text(label,listX,yy,listW-35,11,colors.fg);text(body[id]+'%',r.x+r.w-11,yy,36,12,conditionColor(body[id]),'right',700)});
  }
+ function drawInteraction(s,w,h){
+  const t=s.interaction;if(!s.player||!t||s.context||s.open||w<180||h<180)return;
+  const width=Math.min(286,w-20),height=t.status?52:36,resource=playerResourceLayout(w,h,s.player.bars?.length||0,resourcePage),center=t.centered;
+  const x=center?(w-width)/2:Math.max(10,Math.min(w-width-10,t.x+15)),base=center?h/2+30:t.y+18,y=Math.max(8,Math.min(h-height-8,resource.y-height-7,base)),r={x,y,w:width,h:height};
+  const accent=t.available?colors.gold:'#c79e81';
+  // A restrained plate, not a second inventory or a glowing 3D effect.
+  plate(ctx,r,'#0c1b19e8',accent,6);
+  if(t.available){const key={x:r.x+7,y:r.y+7,w:29,h:22};plate(ctx,key,'#473c28',colors.gold,4);text('F',key.x+key.w/2,key.y+key.h/2,24,13,colors.gold,'center',700)}
+  else text('◇',r.x+21,r.y+18,25,15,accent,'center',700);
+  text(t.label,r.x+45,r.y+18,r.w-53,13,colors.fg,'left',650);
+  if(t.status)text(t.status,r.x+45,r.y+37,r.w-53,11,t.available?colors.muted:accent);
+ }
  function drawPlayerBar(s,w,h){
   if(playerId!==s.player.id){playerId=s.player.id;resourcePage=0;walletOpen=false;walletPage=0}
   const r=playerBarLayout(w,h);panel(r);
@@ -185,7 +197,7 @@ export function mountCanvasHUD(doc,api){
  function drawContext(s,w,h){const m=s.context;if(!m)return;const width=Math.min(245,w-12),height=35+m.actions.length*32+8,r={x:Math.max(6,Math.min(m.x,w-width-6)),y:Math.max(6,Math.min(m.y,h-height-6)),w:width,h:height};panel(r);region(r,'context-panel',()=>{});text(m.name,r.x+12,r.y+17,r.w-24,13,colors.gold,'left',650);m.actions.forEach((a,i)=>button({x:r.x+6,y:r.y+34+i*32,w:r.w-12,h:29},'context-'+i,a.label,a.run))}
  function draw(){frame=0;if(!active)return;origin=viewport.getBoundingClientRect();const w=origin.width,h=origin.height;if(w<1||h<1)return;const dpr=Math.min(2,win.devicePixelRatio||1),bw=Math.max(1,Math.round(w*dpr)),bh=Math.max(1,Math.round(h*dpr));if(layer.width!==bw||layer.height!==bh){layer.width=bw;layer.height=bh}ctx.setTransform(bw/w,0,0,bh/h,0,0);ctx.clearRect(0,0,w,h);regions=[];grid=null;maxScroll=0;
   const s=api.state();layer.style.pointerEvents=s.open?'auto':'none';layout=hudLayout(w,h);const forms=doc.getElementById('creativeForms');if(forms&&s.open&&['settings','zone'].includes(s.category)){const r=inventoryLayout(layout.panel,s.category).forms;Object.assign(forms.style,{left:r.x+'px',top:r.y+'px',width:r.w+'px',height:r.h+'px',bottom:'auto',transform:'none'});}if(s.category!==lastCategory||s.query!==lastQuery||s.family!==lastFamily){scroll=0;lastCategory=s.category;lastQuery=s.query;lastFamily=s.family}if(!s.open){searching=false;familyOpen=false;drag=null}
-  if(s.building)drawBar(s,layout,w);else if(s.player)drawPlayerBar(s,w,h);if(s.open)drawInventory(s,layout);else drawSelection(s,w,h);drawCameraDock(s,w,h);if(!s.open&&!s.player)drawMonitor(s,w,h);properties.draw(s,w,h);drawContext(s,w,h);
+  if(s.building)drawBar(s,layout,w);else if(s.player)drawPlayerBar(s,w,h);if(s.open)drawInventory(s,layout);else drawSelection(s,w,h);drawCameraDock(s,w,h);drawInteraction(s,w,h);if(!s.open&&!s.player)drawMonitor(s,w,h);properties.draw(s,w,h);drawContext(s,w,h);
   if(drag){ctx.globalAlpha=.9;box({x:cursor.x-30,y:cursor.y-30,w:60,h:60},colors.card,colors.gold);icon(drag,cursor.x,cursor.y,36);ctx.globalAlpha=1}
  }
  function point(e){const r=viewport.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}

@@ -38,14 +38,14 @@ export function setActivation(map,ref,settings,W){
  return true;
 }
 // Use the exact surface hit by the camera, not the center of a solid block.
-export function canActivateBlock(map,ref,hit,actor,W){
+export function canActivateBlock(map,ref,hit,actor,W,{ignoreState=false}={}){
  const b=resolveActivationBlock(map,ref,W);if(!b||!actor||actor.locked)return 'Aucun bloc activable visé.';
  const s=activationSettings(b.raw);
  if(!s.enabled)return 'Ce bloc n’est pas activable.';
- if(s.used)return 'Ce bloc doit être réarmé par le MJ.';
+ if(s.used&&!ignoreState)return 'Ce bloc doit être réarmé par le MJ.';
  if(b.object?.secret||b.object?.visible===false||map.groups?.some(g=>g.id===b.group&&g.visible===false)||b.level!==W.levelOf(actor))return 'Bloc inaccessible.';
  if(![hit?.x,hit?.y,hit?.z].every(Number.isFinite))return 'Visez le bloc.';
- const p=W.center(actor),eye=W.elevation(actor,map)+W.eyeHeight(actor),n=hit.normal||{},target={x:hit.x+(n.x||0)*.025,y:hit.y+(n.y||0)*.025},z=hit.z+(n.z||0)*.025;
+ const p=W.center(actor),eye=W.elevation(actor,map)+Math.min(W.eyeHeight(actor),map.camera?.mode==='first'?map.camera.firstEye??Infinity:Infinity),n=hit.normal||{},target={x:hit.x+(n.x||0)*.025,y:hit.y+(n.y||0)*.025},z=hit.z+(n.z||0)*.025;
  if(Math.hypot(target.x-p.x,target.y-p.y,z-eye)>s.reach+.001)return 'Approchez-vous du bloc ('+s.reach+' cases).';
  if(map.fog?.includes(W.cellKey(b.point.x,b.point.y))||!W.terrainLineClear(map,p,target,eye,z)||W.sightHit(map,p,target,W.obstacles(map,'blocksSight',b.level).filter(o=>o.id!==b.object?.id),actor.id,eye,z))return 'Le bloc est derrière un obstacle.';
  return '';
@@ -64,7 +64,7 @@ export function createActivationQueue(){
  },advance(map,now,W,fire){
   const due=pending.filter(p=>p.map===map&&p.at<=now);pending=pending.filter(p=>p.map===map&&p.at>now&&stillValid(p,W));
   for(const p of due){const b=stillValid(p,W);if(b)fire(b,activationSettings(b.raw))}
- },next(map){return pending.reduce((n,p)=>p.map===map?Math.min(n,p.at):n,Infinity)},has(map,ref){return pending.some(p=>p.map===map&&p.key===activationKey(ref))},clear(){pending=[]}};
+ },remaining(map,ref,now,W){const p=pending.find(p=>p.map===map&&p.key===activationKey(ref));return p&&stillValid(p,W)?Math.max(0,p.at-now):null},next(map){return pending.reduce((n,p)=>p.map===map?Math.min(n,p.at):n,Infinity)},has(map,ref){return pending.some(p=>p.map===map&&p.key===activationKey(ref))},clear(){pending=[]}};
 }
 // Recoil is a bounded fictional gameplay displacement. Every small step is
 // validated with the same terrain/actor collision routines as tactical walking.
