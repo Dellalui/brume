@@ -1,8 +1,9 @@
+import {nearbyBlocks,containsBlock} from './placed-geometry.mjs';
 import {PRESETS,throwConfig} from './throw-effects.mjs';
 const number=(v,d,lo,hi)=>v!==null&&v!==''&&Number.isFinite(Number(v))?Math.max(lo,Math.min(hi,Number(v))):d;
 export function activationSettings(raw={}){
  raw=raw&&typeof raw==='object'?raw:{};
- return {enabled:raw.enabled===true,name:String(raw.name||'Activer le bloc').slice(0,60),kind:['explosion','recoil','both'].includes(raw.kind)?raw.kind:'explosion',delay:number(raw.delay,2,0,3600),reach:number(raw.reach,3,1,6),radius:number(raw.radius,4,1,12),push:number(raw.push,3,0,8),once:raw.once!==false,used:raw.used===true,recipeId:typeof raw.recipeId==='string'?raw.recipeId:'builtin:blast',recipe:raw.recipe&&typeof raw.recipe==='object'?raw.recipe:null};
+ return {enabled:raw.enabled===true,trigger:['manual','passage','both'].includes(raw.trigger)?raw.trigger:'manual',name:String(raw.name||'Activer le bloc').slice(0,60),kind:['explosion','recoil','both'].includes(raw.kind)?raw.kind:'explosion',delay:number(raw.delay,2,0,3600),reach:number(raw.reach,3,1,6),radius:number(raw.radius,4,1,12),push:number(raw.push,3,0,8),once:raw.once!==false,used:raw.used===true,recipeId:typeof raw.recipeId==='string'?raw.recipeId:'builtin:blast',recipe:raw.recipe&&typeof raw.recipe==='object'?raw.recipe:null};
 }
 export const activationLibrary=world=>[...PRESETS.map(p=>({id:'builtin:'+p.id,name:p.name,item:{preset:p.id,name:p.name,layers:p.layers}})),...(Array.isArray(world?.throwPresets)?world.throwPresets:[]).filter(p=>p&&typeof p.id==='string'&&Array.isArray(p.layers)).map(p=>({id:'saved:'+p.id,name:p.name+' · enregistré',item:{...p.settings,preset:'blast',name:p.name,layers:p.layers}}))];
 export function chooseActivationRecipe(id,world){
@@ -24,11 +25,11 @@ export function resolveActivationBlock(map,ref,W){
  if(!ref)return null;
  if(ref.kind==='object'){
   const object=map.objects.find(o=>o.id===ref.id&&o.type==='block');if(!object)return null;
-  const p=W.center(object);return {ref,key:activationKey(ref),object,material:object.material,point:{...p,z:W.elevation(object,map)+(object.height||1)/2},raw:object.activation,group:object.group,level:W.levelOf(object)};
+  const p=W.center(object);return {ref,key:activationKey(ref),object,material:object.material,point:{...p,z:W.elevation(object,map)+(object.height||1)/2},raw:object.activation,height:object.height||1,group:object.group,level:W.levelOf(object)};
  }
  if(ref.kind!=='voxel'||![ref.x,ref.y,ref.z].every(Number.isFinite)||!Number.isInteger(ref.x)||!Number.isInteger(ref.y)||!W.activeCell(map,ref.x,ref.y))return null;
  const {x,y,z}=ref,column=x+','+y,cell=column+','+z,material=map.blocks?.[column]?.[z];if(!material)return null;
- return {ref,key:activationKey(ref),material,point:{x:x+.5,y:y+.5,z:z+W.blockSize(map,x,y,z)/2},raw:map.blockActivations?.[cell],group:map.blockGroups?.[cell],level:0};
+ return {ref,key:activationKey(ref),material,point:{x:x+.5,y:y+.5,z:z+W.blockSize(map,x,y,z)/2},raw:map.blockActivations?.[cell],height:W.blockSize(map,x,y,z),group:map.blockGroups?.[cell],level:0};
 }
 export function setActivation(map,ref,settings,W){
  const block=resolveActivationBlock(map,ref,W);if(!block)return false;
@@ -42,6 +43,7 @@ export function canActivateBlock(map,ref,hit,actor,W,{ignoreState=false}={}){
  const b=resolveActivationBlock(map,ref,W);if(!b||!actor||actor.locked)return 'Aucun bloc activable visé.';
  const s=activationSettings(b.raw);
  if(!s.enabled)return 'Ce bloc n’est pas activable.';
+ if(s.trigger==='passage')return 'Ce bloc se déclenche au passage.';
  if(s.used&&!ignoreState)return 'Ce bloc doit être réarmé par le MJ.';
  if(b.object?.secret||b.object?.visible===false||map.groups?.some(g=>g.id===b.group&&g.visible===false)||b.level!==W.levelOf(actor))return 'Bloc inaccessible.';
  if(![hit?.x,hit?.y,hit?.z].every(Number.isFinite))return 'Visez le bloc.';
@@ -49,6 +51,50 @@ export function canActivateBlock(map,ref,hit,actor,W,{ignoreState=false}={}){
  if(Math.hypot(target.x-p.x,target.y-p.y,z-eye)>s.reach+.001)return 'Approchez-vous du bloc ('+s.reach+' cases).';
  if(map.fog?.includes(W.cellKey(b.point.x,b.point.y))||!W.terrainLineClear(map,p,target,eye,z)||W.sightHit(map,p,target,W.obstacles(map,'blocksSight',b.level).filter(o=>o.id!==b.object?.id),actor.id,eye,z))return 'Le bloc est derrière un obstacle.';
  return '';
+}
+// A pressure trigger is checked at the feet, not at the camera or on
+// every rendered frame. Query only crossed voxel columns and local placed blocks.
+export function passagePose(map,actor,W){
+ const p=W.center(actor);return {...p,z:W.elevation(actor,map)};
+}
+function passageContacts(map,actor,p,W){
+ const contacts=new Map(),x=Math.floor(p.x),y=Math.floor(p.y);
+ const add=(ref,bottom,height,raw,solid)=>{
+  if(!raw?.enabled||raw.used||!['passage','both'].includes(raw.trigger))return;
+  // Solid blocks trigger on their upper surface; non-solid blocks can
+  // trigger inside their volume. Do not trigger blocks on another floor.
+  if(solid?Math.abs(p.z-(bottom+height))>.055:p.z<bottom-.055||p.z>bottom+height+.055)return;
+  const block=resolveActivationBlock(map,ref,W);
+  if(!block||block.level!==W.levelOf(actor)||block.object?.visible===false||map.groups?.some(g=>g.id===block.group&&g.visible===false))return;
+  contacts.set(block.key,ref);
+ };
+ if(map.blockActivations&&W.activeCell(map,x,y))for(const [base,material]of Object.entries(map.blocks?.[x+','+y]||{})){
+  const z=+base;add({kind:'voxel',x,y,z},z,W.blockSize(map,x,y,z),map.blockActivations[x+','+y+','+z],W.BLOCKS[material]?.solid!==false)
+ }
+ for(const o of nearbyBlocks(map,p.x,p.y)){
+  if(o.activation?.enabled&&containsBlock(o,p.x,p.y))add({kind:'object',id:o.id},W.elevation(o,map),o.height||1,o.activation,o.blocking!==false);
+ }
+ return contacts;
+}
+export function crossedActivations(map,actor,from,to,W){
+ if(!actor||actor.locked||map.groups?.some(g=>g.id===actor.group&&g.locked)||![from?.x,from?.y,from?.z,to?.x,to?.y,to?.z].every(Number.isFinite))return [];
+ const dx=to.x-from.x,dy=to.y-from.y,dz=to.z-from.z,d=Math.hypot(dx,dy);
+ if(d+Math.abs(dz)<1e-6)return [];
+ // Movement calls supply successive physics positions, not teleport paths.
+ if(d>8||Math.abs(dz)>8)return [];
+ const steps=Math.max(1,Math.ceil(d/.2),Math.ceil(Math.abs(dz)/.05)),result=new Map();
+ let previous=passageContacts(map,actor,from,W);
+ for(let i=1;i<=steps;i++){
+  const t=i/steps,current=passageContacts(map,actor,{x:from.x+dx*t,y:from.y+dy*t,z:from.z+dz*t},W);
+  for(const [key,ref]of current)if(!previous.has(key))result.set(key,ref);
+  previous=current;
+ }
+ return [...result.values()];
+}
+// Visuals originate above a surviving solid trigger instead of inside its
+// opaque material. Terrain damage retains the original impact center.
+export function activationVisualPoint(block,survives){
+ return {...block.point,z:Math.min(32,block.point.z+(survives?(block.height||1)/2+.06:0))};
 }
 // Timers use a monotonic clock and do not keep requestAnimationFrame alive.
 // Each entry is bound to its actual block and its configuration instance.

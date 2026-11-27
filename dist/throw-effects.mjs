@@ -96,17 +96,17 @@ export function flightTrail(from,to,t){
  const distance=throwDistance(from,to),span=Math.min(1,5/Math.max(.001,distance));
  return Array.from({length:24},(_,i)=>flightPosition(from,to,t-span*(i+1)/24));
 }
-export function createThrowQueue(){
+export function createThrowQueue(namespace='throw'){
  let items=[],serial=0;
  return {
   launch(map,enabled,from,to,item,W,now){
    if(!enabled||!validImpact(map,to,W)||![from?.x,from?.y,from?.z,now].every(Number.isFinite)||!inThrowRange(from,to,item))return false;
    const config=throwConfig(item),duration=Math.max(16,throwDistance(from,to)/config.speed*1000);
-   items.push({id:'throw-'+(++serial),map,from:{...from},to:{x:to.x,y:to.y,z:to.z},config,started:now,duration,impactAt:null});return true;
+   items.push({id:namespace+'-'+(++serial),map,from:{...from},to:{x:to.x,y:to.y,z:to.z},config,started:now,duration,impactAt:null});return true;
   },
-  impact(map,point,item,W,now){
+  impact(map,point,item,W,now,level=map.editLevel||0){
    if(!validImpact(map,point,W)||!Number.isFinite(now)||items.length>=32)return false;
-   const config=throwConfig(item);items.push({id:'throw-'+(++serial),map,to:{x:point.x,y:point.y,z:point.z},config,impactAt:now,started:now,duration:0});return true;
+   const config=throwConfig(item);items.push({id:namespace+'-'+(++serial),map,to:{x:point.x,y:point.y,z:point.z},config,level,impactAt:now,started:now,duration:0});return true;
   },
   advance(map,enabled,now,onImpact){
    if(!enabled){items=[];return []}
@@ -116,12 +116,19 @@ export function createThrowQueue(){
     if(p.impactAt===null&&now>=p.started+p.duration){p.impactAt=p.started+p.duration;onImpact(p.to,{preset:p.config.id,power:p.config.power,destroy:p.config.destroy})}
     if(p.impactAt===null){visible.push({id:p.id,config:p.config,position:flightPosition(p.from,p.to,(now-p.started)/p.duration),tail:flightPosition(p.from,p.to,(now-p.started)/p.duration-.15),trail:flightTrail(p.from,p.to,(now-p.started)/p.duration),phase:'flight',age:0});continue}
     const age=(now-p.impactAt)/1000;
-    for(const layer of p.config.layers){const elapsed=age-layer.delay;if(!layer.enabled||elapsed<0||elapsed>=layer.duration)continue;visible.push({id:p.id+':'+layer.id,config:{...p.config,id:layer.kind,color:layer.color,shape:layer.shape,strength:layer.strength,radius:p.config.radius*layer.size,duration:layer.duration},position:p.to,tail:p.to,phase:'impact',age:elapsed})}
+    for(const layer of p.config.layers){const elapsed=age-layer.delay;if(!layer.enabled||elapsed<0||elapsed>=layer.duration)continue;visible.push({id:p.id+':'+layer.id,config:{...p.config,id:layer.kind,color:layer.color,shape:layer.shape,strength:layer.strength,radius:p.config.radius*layer.size,duration:layer.duration},position:p.to,tail:p.to,level:p.level,phase:'impact',age:elapsed})}
    }
    items=items.filter(p=>p.impactAt===null||now-p.impactAt<p.config.duration*1000);
    return visible;
   },
   clear(){items=[]},get size(){return items.length}
  };
+}
+// Construction previews and actual gameplay impacts have different lifetimes
+// and permissions. Never hide a real block activation in player mode.
+export function renderableImpacts(opts){
+ const construction=opts.building&&opts.mode==='mj'?(opts.thrownEffects||[]):[];
+ const blocks=(opts.blockEffects||[]).filter(p=>(p.level??0)===(opts.map.editLevel||0)&&(opts.mode==='mj'||!opts.map.fog?.includes(Math.floor(p.position.x)+','+Math.floor(p.position.y))));
+ return construction.length&&blocks.length?[...construction,...blocks]:construction.length?construction:blocks;
 }
 export const THROW_ITEMS=PRESETS.map(p=>({kind:'throw',preset:p.id,name:p.name,power:3,destroy:true}));
