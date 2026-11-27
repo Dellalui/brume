@@ -8,7 +8,7 @@ import {impactEnvelope} from '../dist/impact-bodies.mjs';
 const fx=createEffects(()=>canvasStub()),v=createThrowVisuals(fx),scene=new T.Scene(),camera=new T.PerspectiveCamera();scene.add(v.group);camera.position.set(8,6,12);camera.lookAt(0,1,0);
 const impact=(id,x=0)=>({id,phase:'impact',age:0,position:{x,y:0,z:0},tail:{x,y:0,z:0},config:throwConfig({preset:'fire',visualQuality:'high'})});
 assert.equal(impactQuality({visualQuality:'high'},'low',3),'low');assert.equal(impactQuality({visualQuality:'high'},'low',2),'balanced');
-const ps=[impact('a'),impact('b'),impact('c'),impact('overflow')];v.update(ps,0,camera,'high');assert.equal(v.stats().active,4);assert.equal(v.stats().instances,4*29);
+const ps=[impact('a'),impact('b'),impact('c'),impact('overflow')];v.update(ps,0,camera,'high');assert.equal(v.stats().active,4);assert.equal(v.stats().instances,4*46);
 let disposed=0;v.group.traverse(o=>{if(o.material)o.material.addEventListener('dispose',()=>disposed++)});
 v.update(ps.map(p=>({...p,age:.8})),.8,camera,'high');const root=v.group.children[0];assert(root.getObjectByName('Quarks · blast_fire'));
 v.update(ps.map(p=>({...p,age:1.9})),1.9,camera,'high');assert(!root.getObjectByName('Quarks · blast_fire'),'expired particle batches are released while smoke remains');
