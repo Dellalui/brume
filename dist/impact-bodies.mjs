@@ -8,19 +8,24 @@ uniform float style;
 uniform float shell;
 varying vec3 localPoint;
 varying vec3 worldPoint;
+varying vec3 smoothNormal;
+varying vec3 viewPoint;
 void main(){
  vec3 p=position;
  float a=elapsed;
  float w=sin(p.x*7.0+p.y*4.0+p.z*3.0-a*4.0)
           *cos(p.z*6.0-p.y*5.0+a*2.7);
  float lobes=sin(p.x*13.0+p.z*7.0+a*3.2)*sin(p.y*11.0-p.z*3.0-a*2.2);
- float deformation=(0.085*w+0.045*lobes)*(shell>.5?.45:1.0);
+ float deformation=(0.048*w+0.018*lobes)*(shell>.5?.4:1.0);
  if(style>1.5&&style<2.5)deformation*=1.8;
  localPoint=p;
  p*=1.0+deformation;
  vec4 world=modelMatrix*vec4(p,1.0);
  worldPoint=world.xyz;
- gl_Position=projectionMatrix*viewMatrix*world;
+ vec4 view=viewMatrix*world;
+ smoothNormal=normalize(normalMatrix*normal);
+ viewPoint=view.xyz;
+ gl_Position=projectionMatrix*view;
 }
 `;
 export const impactFragmentShader=`
@@ -29,11 +34,14 @@ uniform float style;
 uniform float shell;
 uniform float fade;
 uniform float detailNoise;
+uniform float openDome;
 uniform vec3 hotColor;
 uniform vec3 coldColor;
 uniform vec3 highlightColor;
 varying vec3 localPoint;
 varying vec3 worldPoint;
+varying vec3 smoothNormal;
+varying vec3 viewPoint;
 float hash3(vec3 p){
  p=fract(p*.1031);
  p+=dot(p,p.yzx+33.33);
@@ -47,8 +55,8 @@ float n3(vec3 p){
                 mix(hash3(i+vec3(0,1,1)),hash3(i+vec3(1,1,1)),f.x),f.y),f.z);
 }
 void main(){
- vec3 n=normalize(cross(dFdx(worldPoint),dFdy(worldPoint)));
- vec3 v=normalize(cameraPosition-worldPoint);
+ vec3 n=normalize(smoothNormal);
+ vec3 v=normalize(-viewPoint);
  float facing=clamp(dot(n,v),0.0,1.0);
  float rim=pow(1.0-facing,2.4);
  vec3 p=localPoint*3.5+vec3(0,-elapsed*2.1,elapsed*.8);
@@ -56,22 +64,25 @@ void main(){
  float fine=broad;
  if(detailNoise>.5)fine=n3(p*2.45+vec3(broad*2.0,5.0,9.0));
  float turb=.63*broad+.37*fine;
- float light=.38+.62*max(0.0,dot(n,normalize(vec3(.55,.82,.35))));
+ vec3 lightDir=normalize(mat3(viewMatrix)*vec3(.55,.82,.35));
+ float light=.32+.68*max(0.0,dot(n,lightDir));
+ float softEdge=smoothstep(.02,.55,facing+(turb-.5)*.26);
+ float domeEdge=mix(1.0,smoothstep(0.0,.26,localPoint.y),openDome*(1.0-shell));
  vec3 col;
  float alpha;
  if(shell>.5){
   // Distorted, broken pressure front, fading in the middle of its surface.
   float fringe=smoothstep(.24,.8,rim)*smoothstep(.25,.64,turb);
   col=mix(hotColor,highlightColor,fringe);
-  alpha=fade*fringe*.66;
+  alpha=fade*fringe*.32;
  }else if(style<1.5){
   // Rolling incandescent lobes, dark cooled folds and hot turbulent ridges.
-  float heat=smoothstep(.26,.82,turb+(1.0-elapsed)*.13);
-  float fissure=1.0-smoothstep(.018,.095,abs(turb-.54));
+  float heat=smoothstep(.35,.87,turb+(1.0-elapsed)*.08);
+  float fissure=1.0-smoothstep(.016,.065,abs(turb-.64));
   col=mix(coldColor,hotColor,heat);
-  col=mix(col,highlightColor,clamp(heat*heat*.78+fissure*.23,0.0,1.0));
-  col*=.55+.65*light;
-  alpha=fade*(.7+.3*heat)*smoothstep(0.0,.28,facing);
+  col=mix(col,highlightColor,clamp(heat*heat*.38+fissure*.10,0.0,.52));
+  col*=.42+.57*light;
+  alpha=fade*(.36+.43*heat)*softEdge;
  }else if(style<2.5){
   float crystal=pow(abs(sin((localPoint.x+localPoint.z)*12.0+fine*5.0)),9.0);
   col=mix(coldColor,hotColor,turb)*light;
@@ -86,7 +97,10 @@ void main(){
   col=mix(coldColor,hotColor,turb)*light;
   alpha=fade*(.22+.6*turb)*smoothstep(0.0,.38,facing);
  }
- gl_FragColor=vec4(col,clamp(alpha,0.0,1.0));
+ // Preserve color even at high recipe intensity; soften silhouette and open dome rim.
+ float peak=max(max(col.r,col.g),col.b);
+ col/=max(1.0,peak/.94);
+ gl_FragColor=vec4(col,clamp(alpha*domeEdge,0.0,1.0));
  #include <colorspace_fragment>
 }
 `;
@@ -111,18 +125,18 @@ export function impactEnvelope(kind,age,radius){
   waveAlpha:kind==='dust'?0:smooth(0,.045,age)*(1-smooth(.16,.72,age))};
 }
 export function createImpactBodies(){
- const geos={low:new T.SphereGeometry(1,18,12),balanced:new T.SphereGeometry(1,28,18),high:new T.SphereGeometry(1,40,26)};
+ const geos={low:new T.SphereGeometry(1,32,20),balanced:new T.SphereGeometry(1,40,26),high:new T.SphereGeometry(1,56,36)};
  // The vertex shader can expand the sphere beyond its initial bounding box.
  for(const g of Object.values(geos)){g.computeBoundingSphere();g.boundingSphere.radius*=1.25}
  const shapes=new Map();
  function shaped(shape,quality){if(!shape||shape==='sphere')return geos[quality==='minimal'?'low':quality]||geos.balanced;const key=shape+quality;if(shapes.has(key))return shapes.get(key);const n=quality==='high'?32:quality==='low'||quality==='minimal'?12:20;
- let g=shape==='cube'?new T.BoxGeometry(1.65,1.65,1.65,3,3,3):shape==='cone'?new T.ConeGeometry(1,2,n,4):shape==='column'?new T.CylinderGeometry(.65,.65,2.2,n,3):shape==='ring'?new T.TorusGeometry(.8,.16,8,n):shape==='disc'?new T.CylinderGeometry(1,1,.16,n):new T.SphereGeometry(1,n,Math.floor(n/2),0,Math.PI*2,0,Math.PI/2);if(shape==='ring')g.rotateX(Math.PI/2);g.computeBoundingSphere();g.boundingSphere.radius*=1.25;shapes.set(key,g);return g;
+ let g=shape==='cube'?new T.BoxGeometry(1.65,1.65,1.65,3,3,3):shape==='cone'?new T.ConeGeometry(1,2,n,4):shape==='column'?new T.CylinderGeometry(.65,.65,2.2,n,3):shape==='ring'?new T.TorusGeometry(.8,.16,8,n):shape==='disc'?new T.CylinderGeometry(1,1,.16,n):new T.SphereGeometry(1,Math.max(32,n),Math.max(12,Math.floor(n/2)),0,Math.PI*2,0,Math.PI/2);if(shape==='ring')g.rotateX(Math.PI/2);g.computeBoundingSphere();g.boundingSphere.radius*=1.25;shapes.set(key,g);return g;
  }
  function create(kind,quality,shape='sphere',color){
   const p=STYLES[kind]||STYLES.blast,geometry=shaped(shape,quality),group=new T.Group();
   group.name='Corps 3D procédural';
   function material(shell){return new T.ShaderMaterial({uniforms:{
-   elapsed:{value:0},style:{value:p.index},shell:{value:shell},fade:{value:0},detailNoise:{value:['low','minimal'].includes(quality)?0:1},
+   elapsed:{value:0},style:{value:p.index},shell:{value:shell},fade:{value:0},detailNoise:{value:['low','minimal'].includes(quality)?0:1},openDome:{value:shape==='dome'?1:0},
    hotColor:{value:new T.Color(color||p.hot)},coldColor:{value:new T.Color(p.cold)},highlightColor:{value:new T.Color(p.highlight)}
   },vertexShader:impactVertexShader,fragmentShader:impactFragmentShader,transparent:true,depthTest:true,depthWrite:false,side:T.FrontSide,toneMapped:false,blending:shell?T.AdditiveBlending:T.NormalBlending})}
   const core=new T.Mesh(geometry,material(0)),wave=new T.Mesh(geos.low,material(1));
