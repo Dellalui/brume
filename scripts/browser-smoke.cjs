@@ -22,7 +22,7 @@ const assert=require('node:assert/strict'),http=require('node:http'),fs=require(
   assert(await page.evaluate(()=>{const c=document.querySelector('#canvasInterface'),v=c.getBoundingClientRect(),ctx=c.getContext('2d');return ctx.getImageData(Math.floor(v.width/2*c.width/v.width),Math.floor(25*c.height/v.height),1,1).data[3]>0}));
   const top=p.y+53+Math.ceil(10/cols)*31+5;
   await page.mouse.click(geometry.left+p.x+60,geometry.top+top+16);
-  await page.keyboard.type('Singularité instable');await page.keyboard.press('Enter');
+  await page.keyboard.type('Singularit');await page.keyboard.press('Enter');
   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   await page.mouse.click(geometry.left+p.x+45,geometry.top+top+75);
   await tab(9);
