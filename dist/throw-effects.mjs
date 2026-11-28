@@ -1,6 +1,7 @@
 // Fictional construction-mode projectiles. Continuous collision with live world geometry.
 import {RECIPE_PRESETS,normalizeLayers,recipeDuration,SHAPES} from './effect-recipes.mjs';
 import {shotDistance,traceProjectile} from './projectile-collision.mjs';
+import {feedbackSettings} from './impact-feedback.mjs';
 export const PRESETS=RECIPE_PRESETS;
 export const FLIGHT_STYLES=Object.freeze([['orb','Orbe et traînée'],['ribbon','Traînée lumineuse continue'],['beads','Chapelet de boules'],['bare','Boule seule']]);
 export const MAX_RADIUS=6,MAX_REMOVALS=512,IMPACT_MS=3000;
@@ -14,7 +15,7 @@ export function throwConfig(item){
  const flightStyle=FLIGHT_STYLES.some(([id])=>id===item?.flightStyle)?item.flightStyle:'orb',flightColor=/^#[0-9a-f]{6}$/i.test(item?.flightColor||'')?item.flightColor:layers.find(l=>l.enabled)?.color||preset.color;
  const trailLength=Number.isFinite(Number(item?.trailLength))?Math.max(0,Math.min(24,Number(item.trailLength))):5,flightSize=Number.isFinite(Number(item?.flightSize))?Math.max(.25,Math.min(3,Number(item.flightSize))):1;
  const damageShape=SHAPES.some(s=>s.id===item?.damageShape)?item.damageShape:layers.find(l=>l.enabled)?.shape||'sphere';
- return {...preset,name:String(item?.name||preset.name),power,radius:power,damageShape,flightStyle,flightColor,trailLength,flightSize,destroy:item?.destroy!==false,visualScale,range,speed,layers,duration:recipeDuration(layers),visualQuality:item?.visualQuality==='high'?'high':'auto'};
+ return {...preset,...feedbackSettings(item),name:String(item?.name||preset.name),power,radius:power,damageShape,flightStyle,flightColor,trailLength,flightSize,destroy:item?.destroy!==false,visualScale,range,speed,layers,duration:recipeDuration(layers),visualQuality:item?.visualQuality==='high'?'high':'auto'};
 }
 export function throwDistance(from,to){return Math.hypot(to.x-from.x,to.y-from.y,to.z-from.z)}
 export function inThrowRange(from,to,item){const range=throwConfig(item).range;return range===0||throwDistance(from,to)<=range+1e-6}
@@ -315,7 +316,7 @@ export function createThrowQueue(namespace='throw'){
    if(!validImpact(map,point,W)||!Number.isFinite(now)||items.length>=32)return false;
    const config=throwConfig(item);items.push({id:namespace+'-'+(++serial),map,to:{x:point.x,y:point.y,z:point.z},config,layers:impactLayers(config),level,impactAt:now,started:now,duration:0});return true;
   },
-  advance(map,enabled,now,onImpact,{deferTrails=false}={}){
+  advance(map,enabled,now,onImpact,{deferTrails=false,onFeedback=null}={}){
    if(!enabled){items=[];return []}
    items=items.filter(p=>p.map===map);
    const visible=[];
@@ -337,7 +338,13 @@ export function createThrowQueue(namespace='throw'){
      visible.push(flight);continue;
     }
     const age=(now-p.impactAt)/1000;
-    for(const layer of p.layers){const elapsed=age-layer.delay;if(elapsed<0||elapsed>=layer.duration)continue;visible.push({id:p.id+':'+layer.id,config:layer.config,position:p.to,tail:p.to,level:p.level,phase:'impact',age:elapsed})}
+    for(const layer of p.layers){
+     const elapsed=age-layer.delay;if(elapsed<0)continue;
+     // Dispatch exactly once when the layer starts, not once per frame.
+     // Do not replay stale sounds when returning from a suspended tab.
+     if(!layer.feedbackSent){layer.feedbackSent=true;if(onFeedback&&elapsed<=.5)onFeedback({id:p.id+':'+layer.id,config:layer.config,position:p.to,level:p.level,phase:'impact',age:elapsed})}
+     if(elapsed>=layer.duration)continue;visible.push({id:p.id+':'+layer.id,config:layer.config,position:p.to,tail:p.to,level:p.level,phase:'impact',age:elapsed})
+    }
    }
    items=items.filter(p=>!p.missed&&(p.impactAt===null||now-p.impactAt<p.config.duration*1000));
    return visible;

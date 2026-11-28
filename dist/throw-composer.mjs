@@ -1,21 +1,30 @@
 import {RECIPE_PRESETS,EFFECT_TYPES,SHAPES,normalizeLayers,normalizeLayer,recipeDuration,arrangeLayers} from './effect-recipes.mjs';
 import {throwConfig,FLIGHT_STYLES} from './throw-effects.mjs';
+import {feedbackSettings} from './impact-feedback.mjs';
 export function createThrowComposer(root,{getItem,getSaved,onChange,onSave,onDelete,onPreview}){
  const doc=root.ownerDocument,node=(tag,text)=>{const e=doc.createElement(tag);if(text!==undefined)e.textContent=text;return e};
  const button=(text,fn)=>{const b=node('button',text);b.type='button';b.onclick=fn;return b};
  function select(items,value,change){const e=node('select');for(const [id,name]of items){const o=node('option',name);o.value=id;e.append(o)}e.value=value;e.onchange=()=>change(e.value);return e}
  function field(text,input){const l=node('label');l.append(node('span',text),input);return l}
  function input(type,value,change,min,max,step){const e=node('input');e.type=type;e.value=value;if(min!==undefined)e.min=min;if(max!==undefined)e.max=max;if(step!==undefined)e.step=step;e.onchange=()=>change(type==='number'?Number(e.value):e.value);return e}
+ function check(value,change){const e=node('input');e.type='checkbox';e.checked=value;e.onchange=()=>change(e.checked);return e}
  function edit(fn){const item=getItem();if(item?.kind!=='throw')return;item.layers=throwConfig(item).layers;fn(item);item.layers=normalizeLayers(item.layers);onChange();render()}
  function render(){const item=getItem();root.replaceChildren();if(item?.kind!=='throw')return;const cfg=throwConfig(item),saved=getSaved(),all=[...RECIPE_PRESETS,...saved.map(p=>({...p,id:'saved:'+p.id}))];
   const head=node('div');head.className='composer-toolbar';
-  const library=select([['','Choisir un preset…'],...all.map(p=>[p.id,p.name])],'',id=>{const p=all.find(p=>p.id===id);if(!p)return;edit(o=>{o.layers=normalizeLayers(p.layers);o.name=p.name;o.recipeId=id.startsWith('saved:')?p.id.slice(6):null;o.preset=RECIPE_PRESETS.some(x=>x.id===p.id)?p.id:'blast';Object.assign(o,p.settings||{})})});library.setAttribute('aria-label','Bibliothèque de presets');head.append(library,button('Prévisualiser au viseur',onPreview));root.append(head);
+  const library=select([['','Choisir un preset…'],...all.map(p=>[p.id,p.name])],'',id=>{const p=all.find(p=>p.id===id);if(!p)return;edit(o=>{o.layers=normalizeLayers(p.layers);o.name=p.name;o.recipeId=id.startsWith('saved:')?p.id.slice(6):null;o.preset=RECIPE_PRESETS.some(x=>x.id===p.id)?p.id:'blast';Object.assign(o,feedbackSettings(p.settings),p.settings||{})})});library.setAttribute('aria-label','Bibliothèque de presets');head.append(library,button('Prévisualiser au viseur',onPreview));root.append(head);
   root.append(field('Nom du preset',input('text',cfg.name,v=>edit(o=>o.name=v))));
   const flight=node('fieldset');flight.className='projectile-flight-card';flight.append(node('legend','Projectile en vol'));
   const flightGrid=node('div');flightGrid.className='effect-layer-grid';
   flightGrid.append(field('Style de vol',select(FLIGHT_STYLES,cfg.flightStyle,v=>edit(o=>o.flightStyle=v))),field('Longueur de traînée (cases)',input('number',cfg.trailLength,v=>edit(o=>o.trailLength=v),0,24,.5)),field('Taille du projectile ×',input('number',cfg.flightSize,v=>edit(o=>o.flightSize=v),.25,3,.05)),field('Couleur du projectile',input('color',cfg.flightColor,v=>edit(o=>o.flightColor=v))));
   flight.append(flightGrid,button('Couleur automatique',()=>edit(o=>delete o.flightColor)));root.append(flight);
-  const settings=Object.fromEntries(['range','speed','power','destroy','visualScale','visualQuality','flightStyle','trailLength','flightSize'].map(k=>[k,cfg[k]]));settings.flightColor=item.flightColor||'';
+  const settings=Object.fromEntries(['range','speed','power','destroy','visualScale','visualQuality','flightStyle','trailLength','flightSize'].map(k=>[k,cfg[k]]));settings.flightColor=item.flightColor||'';Object.assign(settings,feedbackSettings(cfg));
+  const feedback=node('fieldset');feedback.className='projectile-flight-card impact-feedback-card';feedback.append(node('legend','Secousses et sons à l’impact'));
+  feedback.append(field('Tremblement de caméra',check(cfg.shakeEnabled,v=>edit(o=>o.shakeEnabled=v))));
+  const shakeGrid=node('div');shakeGrid.className='effect-layer-grid';
+  shakeGrid.append(field('Intensité (degrés)',input('number',cfg.shakeIntensity,v=>edit(o=>o.shakeIntensity=v),0,5,.1)),field('Durée des secousses (s)',input('number',cfg.shakeDuration,v=>edit(o=>o.shakeDuration=v),.05,4,.05)),field('Portée des secousses (cases)',input('number',cfg.shakeRange,v=>edit(o=>o.shakeRange=v),1,160,1)),field('Fréquence (Hz)',input('number',cfg.shakeFrequency,v=>edit(o=>o.shakeFrequency=v),1,30,1)));feedback.append(shakeGrid);
+  feedback.append(field('Son à l’impact',check(cfg.soundEnabled,v=>edit(o=>o.soundEnabled=v))),field('Son au lancement',check(cfg.flightSound,v=>edit(o=>o.flightSound=v))));
+  const soundGrid=node('div');soundGrid.className='effect-layer-grid';soundGrid.append(field('Volume du preset (0–1)',input('number',cfg.soundVolume,v=>edit(o=>o.soundVolume=v),0,1,.05)),field('Portée du son (cases)',input('number',cfg.soundRange,v=>edit(o=>o.soundRange=v),1,160,1)));feedback.append(soundGrid);
+  const help=node('p','Chaque couche active déclenche sa propre signature sonore à son délai. Les secousses s’atténuent avec la distance, sans modifier les collisions. Volume général et confort : panneau Effets (Alt + 4).');help.className='micro';feedback.append(help);root.append(feedback);
   const actions=node('div');actions.className='composer-toolbar';actions.append(button('Enregistrer',()=>onSave({id:item.recipeId||null,name:cfg.name,layers:cfg.layers,settings})),button('Enregistrer une copie',()=>onSave({id:null,name:cfg.name+' — copie',layers:cfg.layers,settings})));
   if(item.recipeId)actions.append(button('Supprimer ce preset',()=>onDelete(item.recipeId)));root.append(actions);
   const timing=node('div');timing.className='composer-toolbar';timing.append(button('Tout ensemble',()=>edit(o=>o.layers=arrangeLayers(o.layers,false))),button('Enchaîner',()=>edit(o=>o.layers=arrangeLayers(o.layers,true))),button('+ Ajouter un effet',()=>edit(o=>o.layers.push(normalizeLayer({kind:'fire'},o.layers.length)))));root.append(timing);

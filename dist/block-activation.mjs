@@ -1,5 +1,6 @@
 import {nearbyBlocks,containsBlock} from './placed-geometry.mjs';
 import {PRESETS,throwConfig} from './throw-effects.mjs';
+import {feedbackSettings} from './impact-feedback.mjs';
 const number=(v,d,lo,hi)=>v!==null&&v!==''&&Number.isFinite(Number(v))?Math.max(lo,Math.min(hi,Number(v))):d;
 export function activationSettings(raw={}){
  raw=raw&&typeof raw==='object'?raw:{};
@@ -9,7 +10,7 @@ export const activationLibrary=world=>[...PRESETS.map(p=>({id:'builtin:'+p.id,na
 export function chooseActivationRecipe(id,world){
  const preset=activationLibrary(world).find(p=>p.id===id);if(!preset)return null;
  const cfg=throwConfig(preset.item);
- return {recipeId:id,recipe:{preset:cfg.id,name:cfg.name,power:cfg.power,destroy:cfg.destroy,visualScale:cfg.visualScale,visualQuality:cfg.visualQuality,layers:cfg.layers.map(l=>({...l}))}};
+ return {recipeId:id,recipe:{...feedbackSettings(cfg),preset:cfg.id,name:cfg.name,power:cfg.power,destroy:cfg.destroy,visualScale:cfg.visualScale,visualQuality:cfg.visualQuality,layers:cfg.layers.map(l=>({...l}))}};
 }
 export function activationRecipe(settings,world){
  const s=activationSettings(settings);
