@@ -1,5 +1,5 @@
 import * as W from './world.mjs';
-import {TREE_PROFILES,generateLeaflessTree,treeForm} from './organic-trees.mjs';
+import {TREE_PROFILES,generateLeaflessTree,treeForm,normalizeTreeConfig} from './organic-trees.mjs';
 import {previewConnectionData,rebuildConnections} from './connected-blocks.mjs';
 import {formAllowed,isForm,orientForm,formInfo,hasBlockForm,formsOverlap,connectionEligible,isConnectedForm,isSpatialForm} from './block-forms.mjs';
 import * as V from './blocks.mjs';
@@ -18,15 +18,20 @@ export function defaultSlots(){return[
  {kind:'object',type:'light',yaw:0,step:1},
  {kind:'selection',name:'Sélection de zone'}
 ]}
+export function createTreeSchema(input,id){
+ const config=normalizeTreeConfig(input);
+ if(!W.BLOCKS[config.material]||['water','lava','air'].includes(config.material))throw Error('Choisissez un matériau de construction solide.');
+ const nodes=generateLeaflessTree(config),minX=Math.min(...nodes.map(n=>n.pos[0])),minY=Math.min(...nodes.map(n=>n.pos[1]));
+ const objects=nodes.map((n,i)=>({...blockObject(config.material,n.pos[0]-minX,n.pos[1]-minY,n.pos[2],1,1,1,0,id+'-'+i),blockForm:treeForm(n.radius),formConnect:true,formRadius:n.radius,formOffset:n.offset,formRoot:n.root,formTip:n.tip,formPorts:n.ports,formFlip:false,formMirror:false}));
+ rebuildConnections({objects,groups:[]});
+ return {id,name:config.name,w:Math.max(...objects.map(o=>o.x))+1,d:Math.max(...objects.map(o=>o.y))+1,h:Math.max(...objects.map(o=>o.baseZ))+1,objects,treeConfig:config,createdAt:Date.now()};
+}
 export function ensureTreeExamples(world){
  world.schematics??=[];if(world.builtinTreeSchemasRevision>=3)return;
  world.schematics=world.schematics.filter(s=>!(s.builtin&&s.id.startsWith('builtin-tree-')));const ids=new Set(world.schematics.map(s=>s.id));
  for(const profile of TREE_PROFILES){
   const id='builtin-tree-'+profile.key;if(ids.has(id))continue;
-  const nodes=generateLeaflessTree(profile),minX=Math.min(...nodes.map(n=>n.pos[0])),minY=Math.min(...nodes.map(n=>n.pos[1]));
-  const objects=nodes.map((n,i)=>({...blockObject(profile.material,n.pos[0]-minX,n.pos[1]-minY,n.pos[2],1,1,1,0,id+'-'+i),blockForm:treeForm(n.radius),formConnect:true,formRadius:n.radius,formOffset:n.offset,formRoot:n.root,formTip:n.tip,formPorts:n.ports,formFlip:false,formMirror:false}));
-  rebuildConnections({objects,groups:[]});
-  world.schematics.push({id,name:profile.name,w:Math.max(...objects.map(o=>o.x))+1,d:Math.max(...objects.map(o=>o.y))+1,h:Math.max(...objects.map(o=>o.baseZ))+1,objects,createdAt:0,builtin:true});
+  world.schematics.push({...createTreeSchema(profile,id),createdAt:0,builtin:true});
  }
  world.builtinTreeSchemasRevision=3;
 }
