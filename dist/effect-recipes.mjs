@@ -2,9 +2,14 @@
 export const EFFECT_TYPES=Object.freeze([
  ['blast','Explosion','#ffb25c'],['fire','Feu','#ff6230'],['ice','Givre','#9cdeff'],['storm','Foudre','#d6edff'],['arcane','Arcane','#c08aff'],['dust','Poussière','#c2a581'],['toxic','Toxique','#b9e85b'],['holy','Sacré','#ffe3a0'],['void','Implosion','#aa7cff'],['distortion','Distorsion','#83dbea'],['blackhole','Trou noir','#ffb97a'],['shockwave','Onde de choc','#c7e4ef']
 ].map(([id,name,color])=>Object.freeze({id,name,color})));
+export const SOUND_PROFILES=Object.freeze([['auto','Automatique (effet visuel)'],['none','Silencieux'],...EFFECT_TYPES.map(t=>[t.id,t.id==='holy'?'Explosion sainte':t.name])]);
+export const SOUND_SIZES=Object.freeze([['auto','Selon la taille visuelle'],['small','Petite'],['medium','Moyenne'],['large','Grande'],['massive','Massive']]);
+export function normalizeLayerSound(v={}){
+ return {soundProfile:SOUND_PROFILES.some(([id])=>id===v.soundProfile)?v.soundProfile:'auto',soundSize:SOUND_SIZES.some(([id])=>id===v.soundSize)?v.soundSize:'auto',soundGain:number(v.soundGain,1,0,1),soundDelay:number(v.soundDelay,0,0,10)};
+}
 export const SHAPES=Object.freeze([['sphere','Sphère'],['dome','Dôme'],['ring','Anneau'],['column','Colonne'],['cone','Cône'],['cube','Cube'],['disc','Disque']].map(([id,name])=>({id,name})));
 const number=(v,fallback,min,max)=>Number.isFinite(Number(v))?Math.min(max,Math.max(min,Number(v))):fallback;
-export function normalizeLayer(v={},i=0){const type=EFFECT_TYPES.find(t=>t.id===v.kind)||EFFECT_TYPES[0];return {id:String(v.id||'layer-'+i),kind:type.id,enabled:v.enabled!==false,delay:number(v.delay,0,0,3600),duration:number(v.duration,3,.1,3600),size:number(v.size,1,.05,20),strength:number(v.strength,1,0,3),shape:SHAPES.some(s=>s.id===v.shape)?v.shape:'sphere',color:/^#[0-9a-f]{6}$/i.test(v.color)?v.color:type.color}}
+export function normalizeLayer(v={},i=0){const type=EFFECT_TYPES.find(t=>t.id===v.kind)||EFFECT_TYPES[0];return {id:String(v.id||'layer-'+i),kind:type.id,...normalizeLayerSound(v),enabled:v.enabled!==false,delay:number(v.delay,0,0,3600),duration:number(v.duration,3,.1,3600),size:number(v.size,1,.05,20),strength:number(v.strength,1,0,3),shape:SHAPES.some(s=>s.id===v.shape)?v.shape:'sphere',color:/^#[0-9a-f]{6}$/i.test(v.color)?v.color:type.color}}
 export function normalizeLayers(layers){return (Array.isArray(layers)?layers:[]).map((l,i)=>({...normalizeLayer(l,i),id:'layer-'+i}))}
 const l=(kind,delay=0,duration=3,shape='sphere',size=1,strength=1)=>normalizeLayer({kind,delay,duration,shape,size,strength});
 const original=EFFECT_TYPES.slice(0,9).map((t,i)=>({id:t.id,name:['Explosion classique','Explosion de feu','Explosion de givre','Décharge de foudre','Explosion arcanique','Impact de poussière','Déflagration toxique','Éclat sacré','Implosion du néant'][i],color:t.color,symbol:['✹','✦','❋','ϟ','✧','◉','☣','✺','◎'][i],layers:[l(t.id)]}));

@@ -1,10 +1,10 @@
 // Transient presentation only. No world mutation, physics or camera saves.
 const num=(v,d,lo,hi)=>v!==null&&v!==''&&Number.isFinite(Number(v))?Math.max(lo,Math.min(hi,Number(v))):d;
 export function feedbackSettings(v={}){
- return {shakeEnabled:v?.shakeEnabled===true,shakeIntensity:num(v?.shakeIntensity,1.2,0,5),shakeDuration:num(v?.shakeDuration,.7,.05,4),shakeRange:num(v?.shakeRange,32,1,160),shakeFrequency:num(v?.shakeFrequency,14,1,30),soundEnabled:v?.soundEnabled!==false,soundVolume:num(v?.soundVolume,.85,0,1),soundRange:num(v?.soundRange,48,1,160),flightSound:v?.flightSound!==false};
+ return {shakeEnabled:v?.shakeEnabled===true,shakeIntensity:num(v?.shakeIntensity,1.2,0,5),shakeDuration:num(v?.shakeDuration,.7,.05,4),shakeRange:num(v?.shakeRange,32,1,160),shakeFrequency:num(v?.shakeFrequency,14,1,30),soundEnabled:v?.soundEnabled!==false,soundVolume:num(v?.soundVolume,.85,0,1),soundRange:v?.soundRangeVersion!==2&&Number(v?.soundRange)===48?0:num(v?.soundRange,0,0,600),soundRangeVersion:2,flightSound:v?.flightSound!==false};
 }
 export function audioPreferences(v={}){
- return {sound:v?.sound!==false,volume:num(v?.volume,.55,0,1),ambience:v?.ambience!==false,shake:v?.shake!==false};
+ return {sound:v?.sound!==false,volume:num(v?.volume,.55,0,1),ambience:v?.ambience!==false,shake:v?.shake!==false,effectsVolume:num(v?.effectsVolume,1,0,1),ambienceVolume:num(v?.ambienceVolume,1,0,1),hearingScale:num(v?.hearingScale,1,.5,2),soundTravel:v?.soundTravel===true,shakeScale:num(v?.shakeScale,1,0,1)};
 }
 // Game coordinates are x/y horizontal and z vertical, Three uses x/z.
 export function listenerPose(camera){

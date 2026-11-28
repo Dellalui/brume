@@ -1,7 +1,7 @@
-import {RECIPE_PRESETS,EFFECT_TYPES,SHAPES,normalizeLayers,normalizeLayer,recipeDuration,arrangeLayers} from './effect-recipes.mjs';
+import {RECIPE_PRESETS,EFFECT_TYPES,SHAPES,SOUND_PROFILES,SOUND_SIZES,normalizeLayers,normalizeLayer,recipeDuration,arrangeLayers} from './effect-recipes.mjs';
 import {throwConfig,FLIGHT_STYLES} from './throw-effects.mjs';
 import {feedbackSettings} from './impact-feedback.mjs';
-export function createThrowComposer(root,{getItem,getSaved,onChange,onSave,onDelete,onPreview}){
+export function createThrowComposer(root,{getItem,getSaved,onChange,onSave,onDelete,onPreview,onSoundPreview=()=>{}}){
  const doc=root.ownerDocument,node=(tag,text)=>{const e=doc.createElement(tag);if(text!==undefined)e.textContent=text;return e};
  const button=(text,fn)=>{const b=node('button',text);b.type='button';b.onclick=fn;return b};
  function select(items,value,change){const e=node('select');for(const [id,name]of items){const o=node('option',name);o.value=id;e.append(o)}e.value=value;e.onchange=()=>change(e.value);return e}
@@ -23,8 +23,8 @@ export function createThrowComposer(root,{getItem,getSaved,onChange,onSave,onDel
   const shakeGrid=node('div');shakeGrid.className='effect-layer-grid';
   shakeGrid.append(field('Intensité (degrés)',input('number',cfg.shakeIntensity,v=>edit(o=>o.shakeIntensity=v),0,5,.1)),field('Durée des secousses (s)',input('number',cfg.shakeDuration,v=>edit(o=>o.shakeDuration=v),.05,4,.05)),field('Portée des secousses (cases)',input('number',cfg.shakeRange,v=>edit(o=>o.shakeRange=v),1,160,1)),field('Fréquence (Hz)',input('number',cfg.shakeFrequency,v=>edit(o=>o.shakeFrequency=v),1,30,1)));feedback.append(shakeGrid);
   feedback.append(field('Son à l’impact',check(cfg.soundEnabled,v=>edit(o=>o.soundEnabled=v))),field('Son au lancement',check(cfg.flightSound,v=>edit(o=>o.flightSound=v))));
-  const soundGrid=node('div');soundGrid.className='effect-layer-grid';soundGrid.append(field('Volume du preset (0–1)',input('number',cfg.soundVolume,v=>edit(o=>o.soundVolume=v),0,1,.05)),field('Portée du son (cases)',input('number',cfg.soundRange,v=>edit(o=>o.soundRange=v),1,160,1)));feedback.append(soundGrid);
-  const help=node('p','Chaque couche active déclenche sa propre signature sonore à son délai. Les secousses s’atténuent avec la distance, sans modifier les collisions. Volume général et confort : panneau Effets (Alt + 4).');help.className='micro';feedback.append(help);root.append(feedback);
+  const soundGrid=node('div');soundGrid.className='effect-layer-grid';soundGrid.append(field('Volume du preset (0–1)',input('number',cfg.soundVolume,v=>edit(o=>o.soundVolume=v),0,1,.05)),field('Portée du son (0 = auto)',input('number',cfg.soundRange,v=>edit(o=>{o.soundRange=v;o.soundRangeVersion=2}),0,600,1)));feedback.append(soundGrid);
+  const help=node('p','Chaque couche choisit son propre son. Portée 0 = automatique selon sa taille. Décalage audio 0 = synchronisé au visuel.');help.className='micro';feedback.append(help);root.append(feedback);
   const actions=node('div');actions.className='composer-toolbar';actions.append(button('Enregistrer',()=>onSave({id:item.recipeId||null,name:cfg.name,layers:cfg.layers,settings})),button('Enregistrer une copie',()=>onSave({id:null,name:cfg.name+' — copie',layers:cfg.layers,settings})));
   if(item.recipeId)actions.append(button('Supprimer ce preset',()=>onDelete(item.recipeId)));root.append(actions);
   const timing=node('div');timing.className='composer-toolbar';timing.append(button('Tout ensemble',()=>edit(o=>o.layers=arrangeLayers(o.layers,false))),button('Enchaîner',()=>edit(o=>o.layers=arrangeLayers(o.layers,true))),button('+ Ajouter un effet',()=>edit(o=>o.layers.push(normalizeLayer({kind:'fire'},o.layers.length)))));root.append(timing);
@@ -35,6 +35,9 @@ export function createThrowComposer(root,{getItem,getSaved,onChange,onSave,onDel
    const set=(key,value)=>edit(o=>o.layers[index][key]=value),enabled=node('input');enabled.type='checkbox';enabled.checked=layer.enabled;enabled.onchange=()=>set('enabled',enabled.checked);card.append(field('Actif',enabled));
    const grid=node('div');grid.className='effect-layer-grid';
    grid.append(field('Effet',select(EFFECT_TYPES.map(t=>[t.id,t.name]),layer.kind,v=>edit(o=>{o.layers[index].kind=v;o.layers[index].color=EFFECT_TYPES.find(t=>t.id===v).color}))),field('Forme visuelle',select(SHAPES.map(s=>[s.id,s.name]),layer.shape,v=>set('shape',v))),field('Délai (s)',input('number',layer.delay,v=>set('delay',v),0,3600,.1)),field('Durée (s)',input('number',layer.duration,v=>set('duration',v),.1,3600,.1)),field('Taille ×',input('number',layer.size,v=>set('size',v),.05,20,.05)),field('Intensité',input('number',layer.strength,v=>set('strength',v),0,3,.1)),field('Couleur',input('color',layer.color,v=>set('color',v))));card.append(grid);
+   const sound=node('div');sound.className='effect-layer-grid';
+   sound.append(field('Son indépendant',select(SOUND_PROFILES,layer.soundProfile,v=>set('soundProfile',v))),field('Taille sonore',select(SOUND_SIZES,layer.soundSize,v=>set('soundSize',v))),field('Volume de la couche',input('number',layer.soundGain,v=>set('soundGain',v),0,1,.05)),field('Décalage audio (s)',input('number',layer.soundDelay,v=>set('soundDelay',v),0,10,.05)));
+   card.append(sound,button('Écouter le son',()=>onSoundPreview(layer,cfg)));
    const controls=node('div');controls.className='composer-toolbar';controls.append(button('Dupliquer',()=>edit(o=>o.layers.splice(index+1,0,{...o.layers[index]}))),button('Retirer',()=>edit(o=>o.layers.splice(index,1))));card.append(controls);root.append(card);
   });
   const note=node('p','Le projectile suit le viseur, puis déclenche les effets au premier contact. Les délais commencent à l’impact. La première couche active définit la forme des dégâts ; les autres sont visuelles. Distorsion et trou noir gardent une lentille circulaire.');note.className='micro';root.append(note);

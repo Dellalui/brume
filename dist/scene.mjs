@@ -605,7 +605,7 @@ if(blockCutPass>0.5)gl_FragColor.a*=cutAlpha;`)};m.customProgramCacheKey=()=> 'b
   const events=renderableImpacts({...opts,thrownEffects:opts.throwFeedback,blockEffects:opts.blockFeedback});audio?.playImpacts(events,audioListener);
   if(allowShake&&camera.isPerspectiveCamera)for(const event of events)cameraShake.add(event,audioListener,feedbackTime);
  }
- const shakeOffset=cameraShake.sample(audioListener,feedbackTime);if(cameraShake.size)animations=true;phase('audio / secousses');
+ const shakeOffset=cameraShake.sample(audioListener,feedbackTime);if(shakeOffset){const scale=opts.feedbackPreferences?.shakeScale??1;shakeOffset.x*=scale;shakeOffset.y*=scale;shakeOffset.z*=scale}if(cameraShake.size)animations=true;phase('audio / secousses');
  phase('explosions');const shadowNow=shadowClock();localShadows.mark(changedShadowBounds,sun,pointLights,shadowNow);changedShadowBounds.length=0;
  if(shadowDirty&&(!['first','third'].includes(map.camera.mode)||!lastShadowRefresh||performance.now()-lastShadowRefresh>=(tacticalMotion?250:100))){lastShadowRefresh=performance.now();if(sun.castShadow){sun.shadow.needsUpdate=true;localShadows.satisfy(sun,shadowNow)}for(const l of pointLights)if(l.castShadow){l.shadow.needsUpdate=true;localShadows.satisfy(l,shadowNow)}gpu.shadowMap.needsUpdate=true;shadowDirty=false;localShadows.clear()}
  else if(!shadowDirty){const light=localShadows.take(shadowNow,publishedReliefThisFrame||pendingReliefUploads.length>0);if(light){light.shadow.needsUpdate=true;gpu.shadowMap.needsUpdate=true}}

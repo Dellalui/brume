@@ -1,5 +1,5 @@
 import {audioPreferences,spatialSound} from './impact-feedback.mjs';
-import {IMPACT_PROFILES,IMPACT_SAMPLE_RATE,renderImpactSample,renderImpactBank,impactHearing} from './impact-samples.mjs';
+import {IMPACT_PROFILES,IMPACT_SAMPLE_RATE,renderImpactSample,renderImpactBank,impactHearing,impactSoundEvent,SOUND_SIZE_INFO} from './impact-samples.mjs';
 // Original procedural sounds. One shared noise buffer; native audio nodes
 // run off the rendering thread. No network requests or licensed samples.
 export const MAX_SOUND_VOICES=8,MAX_AMBIENT_VOICES=3,MAX_IMPACTS_PER_FRAME=4;
@@ -50,7 +50,7 @@ export function materialSound(material,category,remove=false){
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const level=n=>Number.isFinite(n)?clamp(n,0,1):1;
 export function createGameAudio({settings={},createContext=()=>{const C=globalThis.AudioContext||globalThis.webkitAudioContext;return C?new C():null},createImpactWorker=()=>typeof Worker==='undefined'?null:new Worker(new URL('./impact-sound-worker.mjs',import.meta.url),{type:'module'})}={}){
- let prefs=audioPreferences(settings),ctx=null,master=null,noise=null,failed=false,nextAmbient=0,paused=false,started=0,skipped=0;
+ let prefs=audioPreferences(settings),ctx=null,master=null,effectsBus=null,ambienceBus=null,noise=null,failed=false,nextAmbient=0,paused=false,started=0,skipped=0;
  const voices=new Set(),loops=new Map(),cooldowns=new Map(),variantIndex=new Map();let worker=null,pcmBank=null,sampleBank=null,backup=null,workerFailed=false,disposed=false;
  function installBank(){
   if(!ctx||!pcmBank||disposed)return;
@@ -77,7 +77,7 @@ export function createGameAudio({settings={},createContext=()=>{const C=globalTh
   try{
    if(!ctx){
     ctx=createContext();if(!ctx){failed=true;return false}
-    master=ctx.createGain();const limit=ctx.createDynamicsCompressor();limit.threshold.value=-10;limit.knee.value=7;limit.ratio.value=5;limit.attack.value=.003;limit.release.value=.17;master.gain.value=prefs.volume*.65;master.connect(limit);limit.connect(ctx.destination);
+    master=ctx.createGain();const limit=ctx.createDynamicsCompressor();limit.threshold.value=-10;limit.knee.value=7;limit.ratio.value=5;limit.attack.value=.003;limit.release.value=.17;master.gain.value=prefs.volume*.65;master.connect(limit);limit.connect(ctx.destination);effectsBus=ctx.createGain();ambienceBus=ctx.createGain();effectsBus.gain.value=prefs.effectsVolume;ambienceBus.gain.value=prefs.ambienceVolume;effectsBus.connect(master);ambienceBus.connect(master);
     // Deterministic, seamless repeating noise, generated only once on a
     // trusted user gesture, not during an explosion/render frame.
     noise=ctx.createBuffer(1,Math.ceil(ctx.sampleRate*1.5),ctx.sampleRate);const data=noise.getChannelData(0);let seed=0x6d2b79f5;
@@ -89,9 +89,9 @@ export function createGameAudio({settings={},createContext=()=>{const C=globalTh
    return true;
   }catch{failed=true;return false}
  }
- function graph(){
+ function graph(bus=effectsBus){
   const gain=ctx.createGain(),pan=ctx.createStereoPanner?.();
-  gain.gain.value=0;if(pan){gain.connect(pan);pan.connect(master)}else gain.connect(master);
+  gain.gain.value=0;if(pan){gain.connect(pan);pan.connect(bus)}else gain.connect(bus);
   const nodes=[gain,...(pan?[pan]:[])],sources=[];
   const set=(volume,stereo,now,smooth=.035)=>{gain.gain.setTargetAtTime(volume,now,smooth);pan?.pan.setTargetAtTime(stereo,now,smooth)};
   const dispose=()=>{for(const n of sources){try{n.stop()}catch{}}for(const n of nodes){try{n.disconnect()}catch{}}};
@@ -104,14 +104,15 @@ export function createGameAudio({settings={},createContext=()=>{const C=globalTh
   if(volume<=0)return null;const s=ctx.createOscillator(),amp=ctx.createGain();s.type=wave;s.frequency.value=freq;amp.gain.value=volume;s.connect(amp);amp.connect(g.gain);g.nodes.push(s,amp);g.sources.push(s);s.start(now);return s;
  }
  function reap(now){for(const v of voices)if(v.end<=now){v.graph.dispose();voices.delete(v)}}
- function start(kind,volume,pan,cutoff=11000){
-  if(!ready()||volume<.008)return false;
+ function start(kind,volume,pan,cutoff=11000,size='medium',delay=0){
+  if(!ready()||!prefs.effectsVolume||volume<.008)return false;
   const p=IMPACT_SOUNDS[kind]||OTHER_SOUNDS[kind];if(!p)return false;
   const now=ctx.currentTime;reap(now);
   // Spam of the same kind is merged perceptually instead of stacking
   // hundreds of independent audio nodes and clipping the speakers.
   const impact=!!IMPACT_SOUNDS[kind];
-  if(now-(cooldowns.get(kind)??-Infinity)<.055){skipped++;return false}
+  const cooldownKey=impact?kind+'|'+size+'|'+Math.round(delay*10):kind;
+  if(now-(cooldowns.get(cooldownKey)??-Infinity)<.055){skipped++;return false}
   // Reserve two slots for impacts. Replace an old impact tail rather
   // than mute every new blast for the entire multi-second sample.
   if(voices.size>=(impact?MAX_SOUND_VOICES:MAX_SOUND_VOICES-2)){
@@ -120,13 +121,13 @@ export function createGameAudio({settings={},createContext=()=>{const C=globalTh
    oldest.graph.dispose();voices.delete(oldest);
   }
   const sample=impact?sampleFor(kind):null;if(impact&&!sample)return false;
-  const g=graph(),end=now+(sample?.duration??p.duration);
+  const rate=sample?(SOUND_SIZE_INFO[size]?.rate??1):1,at=now+(sample?Math.max(0,Math.min(12,delay)):0),g=graph(),end=at+(sample?.duration??p.duration)/rate;
   if(sample){
    // One sample and one distance filter. No oscillator, real-time
    // debris generation, pitch sweep or per-impact reverb graph.
-   const s=ctx.createBufferSource(),f=ctx.createBiquadFilter();s.buffer=sample.buffer;s.loop=false;f.type='lowpass';f.Q.value=.707;f.frequency.value=clamp(cutoff,500,ctx.sampleRate*.45);
+   const s=ctx.createBufferSource(),f=ctx.createBiquadFilter();s.buffer=sample.buffer;s.loop=false;if(s.playbackRate)s.playbackRate.value=rate;f.type='lowpass';f.Q.value=.707;f.frequency.value=clamp(cutoff,500,ctx.sampleRate*.45);
    s.connect(f);f.connect(g.gain);g.nodes.push(s,f);g.sources.push(s);
-   g.gain.gain.setValueAtTime(volume*.85,now);s.start(now);
+   g.gain.gain.setValueAtTime(volume*.85,at);s.start(at);
   }else{
    const filter=sourceNoise(g,p.from,p.filter,p.noise,now,true),tone=sourceTone(g,p.freq,p.wave,p.tone,now);
    if(filter)filter.frequency.exponentialRampToValueAtTime(clamp(p.to,20,ctx.sampleRate*.45),end);
@@ -134,7 +135,7 @@ export function createGameAudio({settings={},createContext=()=>{const C=globalTh
    g.gain.gain.setValueAtTime(.0001,now);g.gain.gain.linearRampToValueAtTime(volume*.4,now+.012);g.gain.gain.exponentialRampToValueAtTime(.0001,end);
   }
   if(g.pan)g.pan.pan.value=pan;
-  const voice={graph:g,end,start:now};voices.add(voice);cooldowns.set(kind,now);started++;
+  const voice={graph:g,end,start:at};voices.add(voice);if(cooldowns.size>256)for(const [k,t]of cooldowns)if(now-t>1)cooldowns.delete(k);cooldowns.set(cooldownKey,now);started++;
   const cleanup=()=>{if(voices.delete(voice))g.dispose()};
   if(g.sources.length){g.sources[0].onended=cleanup;for(const s of g.sources)s.stop(end+.025)}else cleanup();
   return true;
@@ -143,23 +144,25 @@ export function createGameAudio({settings={},createContext=()=>{const C=globalTh
   if(!ready())return false;const pos=IMPACT_SOUNDS[kind]?impactHearing(point,listener,range):spatialSound(point,listener,range);return start(kind,pos.gain*level(volume),pos.pan,pos.cutoff);
  }
  function playImpacts(events,listener){
-  if(!ready()||!events.length)return 0;
-  // Keep a bounded shortlist without sorting all projectile instances.
+  if(!ready()||!events.length||!prefs.effectsVolume)return 0;
   const best=[];
-  for(const e of events){
-   const c=e.config;if(c?.soundEnabled===false||!IMPACT_SOUNDS[c?.id])continue;
-   const s=impactHearing(e.position,listener,c.soundRange??48),volume=s.gain*level(c.soundVolume??.85)*level(c.strength??1);
-   if(volume<.008)continue;
-   let i=best.findIndex(v=>v.volume<volume);if(i<0)i=best.length;if(i>=MAX_IMPACTS_PER_FRAME)continue;
-   const same=best.findIndex(v=>v.kind===c.id);if(same>=0){if(best[same].volume>=volume)continue;best.splice(same,1);i=best.findIndex(v=>v.volume<volume);if(i<0)i=best.length}
-   best.splice(i,0,{kind:c.id,volume,pan:s.pan,cutoff:s.cutoff});if(best.length>MAX_IMPACTS_PER_FRAME)best.pop();
+  for(const event of events){
+   const e=impactSoundEvent(event,listener,prefs);if(!e||e.volume<.008)continue;
+   const same=best.findIndex(v=>v.kind===e.kind&&v.size===e.size&&Math.abs(v.delay-e.delay)<.075);
+   if(same>=0){if(best[same].volume>=e.volume)continue;best.splice(same,1)}
+   let i=best.findIndex(v=>v.volume<e.volume);if(i<0)i=best.length;if(i>=MAX_IMPACTS_PER_FRAME)continue;
+   best.splice(i,0,e);if(best.length>MAX_IMPACTS_PER_FRAME)best.pop();
   }
-  let n=0;for(const e of best)if(start(e.kind,e.volume,e.pan,e.cutoff))n++;return n;
+  let n=0;for(const e of best)if(start(e.kind,e.volume,e.pan,e.cutoff,e.size,e.delay))n++;return n;
+ }
+ function previewImpact(config){
+  const point={x:0,y:0,z:0},e=impactSoundEvent({position:point,config:{...config,soundDelay:0}},point,{...prefs,soundTravel:false});
+  return !!e&&start(e.kind,e.volume,e.pan,e.cutoff,e.size,0);
  }
  function stopLoops(){for(const l of loops.values())l.graph.dispose();loops.clear();nextAmbient=0}
- function ambientDue(now){if(!ready()||!prefs.ambience||now<nextAmbient)return false;nextAmbient=now+180;return true}
+ function ambientDue(now){if(!ready()||!prefs.ambience||!prefs.ambienceVolume||now<nextAmbient)return false;nextAmbient=now+180;return true}
  function syncAmbient(sources,listener){
-  if(!ready()||!prefs.ambience){stopLoops();return}
+  if(!ready()||!prefs.ambience||!prefs.ambienceVolume){stopLoops();return}
   const now=ctx.currentTime,best=[];
   for(const s of sources){
    if(!AMBIENT_SOUNDS[s.kind])continue;
@@ -171,12 +174,12 @@ export function createGameAudio({settings={},createContext=()=>{const C=globalTh
   const keep=new Set(best.map(s=>s.id));for(const [id,l]of loops)if(!keep.has(id)){l.graph.dispose();loops.delete(id)}
   for(const s of best){
    let l=loops.get(s.id);if(l&&l.kind!==s.kind){l.graph.dispose();loops.delete(s.id);l=null}
-   if(!l){const p=AMBIENT_SOUNDS[s.kind],g=graph();sourceNoise(g,p.hz,p.filter,p.noise,now,true);sourceTone(g,p.freq,p.wave,p.tone,now);l={kind:s.kind,graph:g};loops.set(s.id,l)}
+   if(!l){const p=AMBIENT_SOUNDS[s.kind],g=graph(ambienceBus);sourceNoise(g,p.hz,p.filter,p.noise,now,true);sourceTone(g,p.freq,p.wave,p.tone,now);l={kind:s.kind,graph:g};loops.set(s.id,l)}
    l.graph.set(s.gain*.25,s.pan,now,.12);
   }
  }
  function stop(){for(const v of voices)v.graph.dispose();voices.clear();cooldowns.clear();stopLoops()}
- function setSettings(value){prefs=audioPreferences(value);if(master)master.gain.setTargetAtTime(prefs.volume*.65,ctx.currentTime,.035);if(!prefs.sound||prefs.volume===0)stop();else if(!prefs.ambience)stopLoops();return {...prefs}}
+ function setSettings(value){prefs=audioPreferences(value);if(master){master.gain.setTargetAtTime(prefs.volume*.65,ctx.currentTime,.035);effectsBus.gain.setTargetAtTime(prefs.effectsVolume,ctx.currentTime,.035);ambienceBus.gain.setTargetAtTime(prefs.ambienceVolume,ctx.currentTime,.035)}if(!prefs.sound||prefs.volume===0)stop();else if(!prefs.ambience||!prefs.ambienceVolume)stopLoops();return {...prefs}}
  function pause(){paused=true;stop();try{ctx?.suspend()?.catch?.(()=>{})}catch{}}
- return {unlock,play,playImpacts,ambientDue,syncAmbient,stop,pause,setSettings,settings:()=>({...prefs}),stats:()=>({voices:voices.size,ambient:loops.size,started,skipped,ready:!!ready(),impactSamples:sampleBank?Object.values(sampleBank).reduce((n,a)=>n+a.length,0):backup?1:0}),dispose(){disposed=true;worker?.terminate();worker=null;stop();try{ctx?.close()?.catch?.(()=>{})}catch{}ctx=null;master=null;noise=null;sampleBank=pcmBank=backup=null}};
+ return {unlock,play,playImpacts,previewImpact,ambientDue,syncAmbient,stop,pause,setSettings,settings:()=>({...prefs}),stats:()=>({voices:voices.size,ambient:loops.size,started,skipped,ready:!!ready(),impactSamples:sampleBank?Object.values(sampleBank).reduce((n,a)=>n+a.length,0):backup?1:0}),dispose(){disposed=true;worker?.terminate();worker=null;stop();try{ctx?.close()?.catch?.(()=>{})}catch{}ctx=null;master=null;noise=null;sampleBank=pcmBank=backup=null}};
 }

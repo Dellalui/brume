@@ -284,7 +284,7 @@ export function applyImpactBatch(map,impacts,W,beforeChange=()=>{},metrics=null)
  return {changed,count,protectedCount,resistedCount,limited,destructive,changes};
 }
 function impactLayers(config){
- return config.layers.filter(l=>l.enabled).map(layer=>({id:layer.id,delay:layer.delay,duration:layer.duration,config:{...config,id:layer.kind,color:layer.color,shape:layer.shape,strength:layer.strength,radius:config.radius*layer.size,duration:layer.duration}}));
+ return config.layers.filter(l=>l.enabled).map(layer=>({id:layer.id,delay:layer.delay,duration:layer.duration,config:{...config,id:layer.kind,color:layer.color,shape:layer.shape,strength:layer.strength,radius:config.radius*layer.size,soundVisualRadius:config.radius*layer.size*config.visualScale,soundProfile:layer.soundProfile,soundSize:layer.soundSize,soundGain:layer.soundGain,soundDelay:layer.soundDelay,duration:layer.duration}}));
 }
 export function flightPosition(from,to,t,out={},linear=false){
  t=Math.max(0,Math.min(1,t));const arc=linear?0:Math.sin(t*Math.PI)*.28;

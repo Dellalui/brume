@@ -40,6 +40,17 @@ export function renderImpactSample(kind,variant=0,sampleRate=IMPACT_SAMPLE_RATE)
   const crack=peakBias*p.crack*attack*(.64*n+.45*high+.33*mid);
   direct[i]=crack+p.bass*low*lowEnv*.66+p.body*(lowMid*.66+mid*.40)*bodyEnv+p.texture*(mid*.55+high*.45)*tail*.24;
  }
+ // Distinct, quiet baked modal resonance over the broadband impact.
+ // Fixed partials, no pitch sweep or real-time oscillator.
+ if(kind==='holy'||kind==='arcane'||kind==='distortion'){
+  const modes=kind==='holy'?[[392,.10,1.05],[588,.07,.85],[783,.045,.68],[1176,.028,.44]]:kind==='arcane'?[[174,.085,.65],[279,.055,.5],[463,.035,.38]]:[[83,.085,.38],[131,.065,.34],[251,.035,.25]];
+  const phase=modes.map(()=>rng()*Math.PI*2);
+  for(let i=0;i<length;i++){
+   const t=i*inv,env=Math.min(1,t/.035)*Math.exp(-t/.92);let v=0;
+   for(let j=0;j<modes.length;j++){const [hz,amp,decay]=modes[j];v+=amp*Math.sin(2*Math.PI*hz*t+phase[j])*Math.exp(-t/decay)}
+   direct[i]+=v*env;
+  }
+ }
  // Independent, irregular secondary impacts/debris, not periodic tones.
  const [lo,hi,width]=grainProfiles[p.grain],grains=Math.round(16+p.debris*46);
  for(let j=0;j<grains;j++){
@@ -67,10 +78,32 @@ export function renderImpactSample(kind,variant=0,sampleRate=IMPACT_SAMPLE_RATE)
  return out;
 }
 export function renderImpactBank(){const bank={};for(const kind of Object.keys(IMPACT_PROFILES))bank[kind]=Array.from({length:IMPACT_VARIANTS},(_,i)=>renderImpactSample(kind,i));return bank}
-// Game-coordinate hearing with distance-dependent high-frequency loss.
+// Artistic game-audio distances; one cell = one meter only for optional
+// propagation delay. This is not a physical explosion pressure model.
+export const SOUND_SIZE_INFO=Object.freeze({small:{range:90,rate:1.10},medium:{range:150,rate:1},large:{range:240,rate:.91},massive:{range:360,rate:.84}});
+export function soundSizeFor(c={}){
+ if(Object.hasOwn(SOUND_SIZE_INFO,c.soundSize))return c.soundSize;
+ const radius=Math.max(0,Number(c.soundVisualRadius??c.radius??3)||3);
+ return radius>=12?'massive':radius>=5?'large':radius>=2.5?'medium':'small';
+}
+export function impactAudibleRange(c={},scale=1){
+ const size=soundSizeFor(c),explicit=Number(c.soundRange);
+ const manual=Number.isFinite(explicit)&&explicit>0&&!(explicit===48&&c.soundRangeVersion!==2);
+ return clamp((manual?explicit:SOUND_SIZE_INFO[size].range)*clamp(Number(scale)||1,.5,2),1,600);
+}
 export function impactHearing(point,listener,range){
- if(!point||!listener||![point.x,point.y,point.z,listener.x,listener.y,listener.z,range].every(Number.isFinite)||range<=0)return {gain:0,cutoff:1000,pan:0};
+ if(!point||!listener||![point.x,point.y,point.z,listener.x,listener.y,listener.z,range].every(Number.isFinite)||range<=0)return {gain:0,cutoff:1000,pan:0,distance:0};
  const dx=point.x-listener.x,dy=point.y-listener.y,dz=point.z-listener.z,d=Math.hypot(dx,dy,dz),q=clamp(d/range,0,1);
- const gain=(1-q*q)**1.5/(1+2*q*q),cutoff=11000/(1+8*q*q),pan=d>.001?clamp((dx*(listener.rx||0)+dy*(listener.ry||0)+dz*(listener.rz||0))/d,-1,1):0;
- return {gain,cutoff,pan};
+ const edge=clamp((q-.72)/.28,0,1),gain=(1-edge*edge*(3-2*edge))/(1+1.4*q*q),cutoff=12000/(1+5*q*q);
+ const pan=d>.001?clamp((dx*(listener.rx||0)+dy*(listener.ry||0)+dz*(listener.rz||0))/d,-1,1):0;
+ return {gain,cutoff,pan,distance:d};
+}
+export function impactSoundEvent(event,listener,prefs={}){
+ const c=event.config||{},kind=c.soundProfile==='none'?null:c.soundProfile&&c.soundProfile!=='auto'?c.soundProfile:c.id;
+ if(c.soundEnabled===false||!Object.hasOwn(IMPACT_PROFILES,kind))return null;
+ const size=soundSizeFor(c),heard=impactHearing(event.position,listener,impactAudibleRange(c,prefs.hearingScale));
+ const unit=v=>clamp(Number.isFinite(Number(v))?Number(v):1,0,1);
+ const volume=heard.gain*unit(c.soundVolume??.85)*unit(c.soundGain??1)*unit(c.strength??1);
+ const delay=Math.max(0,clamp(Number(c.soundDelay)||0,0,10)+(prefs.soundTravel?heard.distance/343:0)-Math.max(0,Number(event.age)||0));
+ return {kind,size,volume,pan:heard.pan,cutoff:heard.cutoff,delay};
 }

@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {feedbackSettings} from '../dist/impact-feedback.mjs';
+import {normalizeLayer,normalizeLayers} from '../dist/effect-recipes.mjs';
+import {impactHearing,impactAudibleRange,impactSoundEvent,soundSizeFor} from '../dist/impact-samples.mjs';
+assert.equal(feedbackSettings({}).soundRange,0);assert.equal(feedbackSettings({soundRange:48}).soundRange,0);assert.equal(feedbackSettings({soundRange:48,soundRangeVersion:2}).soundRange,48);
+const l=normalizeLayer({kind:'fire',soundProfile:'holy',soundSize:'massive',soundGain:.7,soundDelay:.2});assert.equal(l.kind,'fire');assert.equal(l.soundProfile,'holy');assert.deepEqual(normalizeLayers([l])[0],l);
+assert.equal(normalizeLayer({soundProfile:'bad',soundSize:'bad'}).soundProfile,'auto');
+assert.equal(soundSizeFor({soundVisualRadius:13}),'massive');assert.equal(impactAudibleRange({soundSize:'massive'}),360);assert.equal(impactAudibleRange({soundRange:60,soundRangeVersion:2}),60);
+const listener={x:0,y:0,z:0,rx:1},point={x:50,y:0,z:0};
+const e=impactSoundEvent({position:point,config:{id:'fire',...l},age:.01},listener,{soundTravel:false});assert.equal(e.kind,'holy');assert.equal(e.size,'massive');assert(e.volume>.5);assert(Math.abs(e.delay-.19)<1e-8);
+const auto=impactSoundEvent({position:point,config:{id:'fire',radius:5},age:.01},listener,{soundTravel:true});assert.equal(auto.kind,'fire');assert(auto.volume>.7);assert(Math.abs(auto.delay-(50/343-.01))<1e-8);
+assert.equal(impactSoundEvent({position:point,config:{id:'fire',radius:5}},listener,{}).delay,0);
+assert.equal(impactSoundEvent({position:point,config:{id:'fire',soundProfile:'none'}},listener,{}),null);
+assert.equal(impactHearing({x:241,y:0,z:0},listener,240).gain,0);
