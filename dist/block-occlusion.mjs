@@ -1,4 +1,5 @@
 import * as W from './world.mjs';
+import {hasBlockForm} from './block-forms.mjs';
 const EPS=1e-6,BUCKET=4;
 const key=(x,y,z)=>`${x},${y},${z}`;
 // Conservative face coverage: partial seams, glass and rotated pieces never hide neighbours.
@@ -27,7 +28,7 @@ function prepareBlockOcclusion(map,{region=null,slice=32,mode='mj',columns=Objec
   for(const [base,kind]of Object.entries(entries)){const z=+base,h=W.blockSize(map,x,y,z),id=key(x,y,z),def=W.BLOCKS[kind];if(!def||z>=slice||groups.get(map.blockGroups?.[id])?.visible===false)continue;add({id,voxel:true,min:[x,y,z],max:[x+1,y+1,z+h],opaque:def.opaque&&def.opacity===1,canHide:true})}
  }
  for(const o of objects){
-  if(o.type!=='block'||o.visible===false||groups.get(o.group)?.visible===false||mode!=='mj'&&o.secret||region&&!region.object(o))continue;
+  if(o.type!=='block'||hasBlockForm(o)||o.visible===false||groups.get(o.group)?.visible===false||mode!=='mj'&&o.secret||region&&!region.object(o))continue;
   const turn=(o.facing||0)/(Math.PI/2);if(Math.abs(turn-Math.round(turn))>EPS)continue;
   const b=W.bounds(o),z=W.elevation(o,map),def=W.BLOCKS[o.material||'stone'];if(z>=slice)continue;
   add({id:o.id,min:[b.x,b.y,z],max:[b.x+b.w,b.y+b.h,z+o.height],opaque:!!def?.opaque&&def.opacity===1&&(o.opacity??1)===1&&!o.imageId,canHide:!o.effect?.kind&&!o.aura?.enabled});

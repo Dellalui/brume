@@ -1,4 +1,5 @@
 import * as W from './world.mjs';
+import {formAllowed,isForm,orientForm,formInfo,hasBlockForm,formsOverlap} from './block-forms.mjs';
 import * as V from './blocks.mjs';
 import {applyLiquidStyle,liquidPresetName} from './liquid-style.mjs';
 
@@ -16,13 +17,17 @@ export function defaultSlots(){return[
  {kind:'selection',name:'Sélection de zone'}
 ]}
 export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];return world.builder}
-export function itemName(item,world){if(!item)return'Vide';if(item.kind==='block')return liquidPresetName(item.material,item.liquidStyle)||(item.liquidStyle?((W.BLOCKS[item.material]?.name||'Bloc')+' personnalisée'):(W.BLOCKS[item.material]?.name||'Bloc'));if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}
+export function itemName(item,world){if(!item)return'Vide';if(formAllowed(item)&&isForm(item.shape))return (W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(item.shape).name;if(item.kind==='block')return liquidPresetName(item.material,item.liquidStyle)||(item.liquidStyle?((W.BLOCKS[item.material]?.name||'Bloc')+' personnalisée'):(W.BLOCKS[item.material]?.name||'Bloc'));if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}
 export function dimensions(item){const n=(v,f,max)=>Number.isFinite(+v)?W.clamp(snap(+v),.1,max):f;return{w:n(item.w,1,32),d:n(item.d,1,32),h:n(item.h,1,32)}}
 export function blockObject(material,x,y,z,w,d,h,yaw,id){return{...W.newObject('block',x,y,id),name:W.BLOCKS[material]?.name||'Bloc',material,w,d,height:h,baseZ:snap(z),facing:yaw,group:null,blocking:W.BLOCKS[material]?.solid!==false,blocksSight:!!W.BLOCKS[material]?.opaque,shadow:true,frameCount:1,frames:{},...(W.BLOCKS[material]?.emissive?{light:{radius:5,power:1,color:W.BLOCKS[material].accent||W.BLOCKS[material].top}}:{})}}
 const rotate=(x,y,a)=>({x:x*Math.cos(a)-y*Math.sin(a),y:x*Math.sin(a)+y*Math.cos(a)});
 export function placement(item,point,world,id=()=>crypto.randomUUID()){
  if(!item||!Number.isFinite(point.x)||!Number.isFinite(point.y)||!Number.isFinite(point.z))return[];
  const size=dimensions(item),yaw=(item.yaw||0)*Math.PI/180,step=item.step===1?1:.1;
+ if(formAllowed(item)&&isForm(item.shape)){
+  const pose=orientForm({...item,...size},point),o=blockObject(item.material,pose.x,pose.y,pose.z,pose.w,pose.d,pose.h,pose.angle,id());
+  Object.assign(o,{baseZ:pose.z,blockForm:pose.shape,formFlip:pose.flipZ,formMirror:pose.mirror,name:(W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(pose.shape).name});return[o];
+ }
  let center={x:snap(point.x-size.w/2,step)+size.w/2,y:snap(point.y-size.d/2,step)+size.d/2},z=snap(point.z),angle=yaw;
  const support=point.placedBlock,n=point.normal;
  if(support&&n){
@@ -63,7 +68,7 @@ export function overlap(a,b,map){
   const p=polygon[i],q=polygon[(i+1)%4],axis={x:p.y-q.y,y:q.x-p.x},aa=pa.map(t=>t.x*axis.x+t.y*axis.y),bb=pb.map(t=>t.x*axis.x+t.y*axis.y);
   if(Math.max(...aa)<=Math.min(...bb)+.0001||Math.max(...bb)<=Math.min(...aa)+.0001)return false;
  }
- return true;
+ return hasBlockForm(a)||hasBlockForm(b)?formsOverlap(a,b,a0,b0):true;
 }
 export function placementError(map,objects){
  if(!objects.length)return'Choisissez un élément dans l’inventaire.';

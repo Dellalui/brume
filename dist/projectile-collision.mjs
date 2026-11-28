@@ -1,6 +1,7 @@
 // Continuous collision for fictional VFX projectiles, using live world data.
 // A segment traverses only crossed XY columns and nearby static colliders;
 // no dependency on visible chunks, rendered geometry, or the camera.
+import {hasBlockForm,shapeRayEntry} from './block-forms.mjs';
 const EPS=1e-8,BIN=4,indices=new WeakMap();
 function interval(p,d,min,max,lo,hi){
  if(Math.abs(d)<EPS)return p>=min&&p<=max?[lo,hi]:null;
@@ -45,6 +46,7 @@ function verticalEntry(z,d,min,max,lo,hi){
 function objectEntry(o,map,W,from,d,max){
  if(o.visible===false||W.isDoor(o)&&o.open)return Infinity;
  if(o.type==='block'?!W.BLOCKS[o.material||'stone']?.solid:!(o.blocking||o.blocksSight))return Infinity;
+ if(hasBlockForm(o))return shapeRayEntry(o,from,d,max,W.elevation(o,map));
  const center=W.center(o),z=W.elevation(o,map),h=(o.height||1)*(o.scale||1);
  let w=o.w||1,depth=o.d||1,angle=o.facing||0;
  if(W.isSegment(o)){w=Math.max(.01,Math.hypot(o.x2-o.x,o.y2-o.y));depth=.16;angle=Math.atan2(o.y2-o.y,o.x2-o.x)}

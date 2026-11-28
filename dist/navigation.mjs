@@ -1,3 +1,4 @@
+import {hasBlockForm,formCollisionBoxes} from './block-forms.mjs';
 import * as T from './vendor/three.module.min.js';
 import * as W from './world.mjs';
 export function cameraAxes(angle,tilt){let pitch=Math.asin(W.clamp(tilt,-.995,.995)),fx=(Math.cos(angle)+Math.sin(angle))/Math.SQRT2,fz=(Math.cos(angle)-Math.sin(angle))/Math.SQRT2;return{forward:new T.Vector3(-fx*Math.cos(pitch),-Math.sin(pitch),-fz*Math.cos(pitch)),right:new T.Vector3(fz,0,-fx)}}
@@ -91,6 +92,7 @@ export function boxesNear(map,origin,range,ignore,liquids=null,player=false){
   if(W.isSegment(o))add(p.x,y,p.y,Math.max(.01,Math.hypot(o.x2-o.x,o.y2-o.y)),h,.16,Math.atan2(o.y2-o.y,o.x2-o.x));
   else if(player&&W.character(o)){const radius=Math.max(.24,Math.min(.45,(o.w||1)*.29));add(p.x,y,p.y,radius*2,h,radius*2)}
   else if(o.type==='tree')add(p.x,y,p.y,(o.trunkRadius||.13)*2,h,(o.trunkRadius||.13)*2);
+   else if(hasBlockForm(o)){for(const part of formCollisionBoxes(o,y)){const c=W.center(part);add(c.x,part.baseZ,c.y,part.w,part.height,part.d,part.facing||0)}}
   else add(p.x,y,p.y,o.w||1,h,o.d||1,o.facing||0);
  }
  // A camera should not enter an opaque lava surface, including derived flow.

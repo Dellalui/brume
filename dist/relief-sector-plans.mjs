@@ -1,4 +1,5 @@
 import * as W from './world.mjs';
+import {hasBlockForm} from './block-forms.mjs';
 import {reliefPlan,reliefSignature} from './relief-batches.mjs';
 import {isLiquid} from './liquid-flow.mjs';
 const sector=(x,y)=>Math.floor(x/16)+','+Math.floor(y/16);
@@ -24,7 +25,7 @@ export function buildReliefSector(src,args){
     }
    }
    for(const o of src.objects){
-    if(occ.hiddenObjects.has(o.id)||o.type!=='block'||(!isLiquid(o.material)&&images.get(o.imageId))||o.visible===false||groupsById.get(o.group)?.visible===false||mode!=='mj'&&o.secret)continue;
+    if(occ.hiddenObjects.has(o.id)||o.type!=='block'||hasBlockForm(o)||(!isLiquid(o.material)&&images.get(o.imageId))||o.visible===false||groupsById.get(o.group)?.visible===false||mode!=='mj'&&o.secret)continue;
     const z=W.elevation(o,map);if(z>=slice)continue;
     const b=W.bounds(o);if(b.x+b.w<origin.x||b.y+b.h<origin.y||b.x>origin.x+size.x||b.y>origin.y+size.y)continue;
     add(cells,o.material||'stone',{id:o.id,object:o,x:o.x+o.w/2-.5,y:o.y+o.d/2-.5,z,h:o.height,w:o.w,d:o.d,angle:o.facing||0});
