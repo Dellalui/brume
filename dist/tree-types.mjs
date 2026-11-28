@@ -37,9 +37,9 @@ export function treeVariant(input,sequence=0){
   // smooth coordinate warp perturbs neighboring samples coherently.
   const sx=1+sign()*a*.7,sy=1+sign()*a*.7,sz=1+sign()*a*.65,th=sign()*a*1.8,co=Math.cos(th),si=Math.sin(th),bendX=sign()*a,bendY=sign()*a,phase=rand()*6.283185307,rscale=1+sign()*a*.65;
   const graph=base.map(([x,y,z,r,parent,tip],i)=>{
-   const bend=Math.max(0,z-.5),warp=a*.26*Math.sin(x*.57+y*.43+z*.38+phase)*Math.hypot(x,y);
+   const bend=c.architecture==='log'?0:Math.max(0,z-.5),warp=a*.26*Math.sin(x*.57+y*.43+z*.38+phase)*Math.hypot(x,y);
    const xx=x*sx+bendX*bend*.30+warp,yy=y*sy+bendY*bend*.30-warp*.55;
-   return [round(xx*co-yy*si),round(xx*si+yy*co),round(clamp(.5+(z-.5)*sz,.02,24.8)),round(clamp(r*rscale*(1+a*.16*Math.sin(z*.6+x*.4+phase)),.013,.46)),parent,tip];
+   return [round(xx*co-yy*si),round(xx*si+yy*co),round(c.architecture==='log'?z:clamp(.5+(z-.5)*sz,.02,24.8)),round(c.architecture==='log'?r:clamp(r*rscale*(1+a*.16*Math.sin(z*.6+x*.4+phase)),.013,.46)),parent,tip];
   });
   const safe=validTreeGraph(graph)?graph:base;
   return {graph:safe,extent:treeExtent(safe),seed,sequence:seq,rotation:sign()*a*Math.PI/.30};

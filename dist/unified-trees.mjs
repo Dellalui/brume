@@ -70,7 +70,7 @@ export function unifiedTreeGeometry(T,graph){
  function buildPath(first,parent=null){
   const points=[],forks=[];let n=first;
   if(parent)points.push({p:parent.p,r:Math.min(parent.r*.72,Math.max(first.r*1.18,.015)),node:null});
-  else points.push({p:[first.p[0],0,first.p[2]],r:Math.min(.55,first.r*1.22),node:null});
+  else if(first.tip!=='broken')points.push({p:[first.p[0],0,first.p[2]],r:Math.min(.55,first.r*1.22),node:null});
   for(;;){
    points.push({p:n.p,r:n.r,node:n.i});
    const next=continuation(n);for(const c of n.children)if(c!==next)forks.push([c,n]);

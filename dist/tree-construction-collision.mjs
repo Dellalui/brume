@@ -7,7 +7,7 @@ const extent=(a,b,r)=>[Math.min(a[0],b[0])-r,Math.min(a[1],b[1])-r,Math.max(0,Ma
 function localSegments(graph){
  if(graphCache.has(graph))return graphCache.get(graph);
  const parts=[],parents=new Set(graph.slice(1).map(n=>n[4])),root=graph[0];
- parts.push([[root[0],root[1],0],root,Math.min(.55,root[3]*1.22)+.08]);
+ if(root[5]!=='broken')parts.push([[root[0],root[1],0],root,Math.min(.55,root[3]*1.22)+.08]);
  for(let i=1;i<graph.length;i++){
   const n=graph[i],p=graph[n[4]],d=Math.hypot(n[0]-p[0],n[1]-p[1],n[2]-p[2]),margin=.20*d+.035;
   parts.push([p,n,Math.max(p[3],n[3])+margin]);

@@ -3,7 +3,7 @@ import {TREE_GENERATOR_PROFILES,normalizeTreeConfig,generateLeaflessTree} from '
 import {createTreeSchema,schemaPlacement} from '../dist/construction.mjs';
 import {unifiedTreeGeometry,validTreeGraph} from '../dist/unified-trees.mjs';
 import * as T from '../dist/vendor/three.module.min.js';
-assert.equal(TREE_GENERATOR_PROFILES.length,9);
+assert.equal(TREE_GENERATOR_PROFILES.length,30);
 for(const p of TREE_GENERATOR_PROFILES){
  const config=normalizeTreeConfig(p),a=generateLeaflessTree(config);
  assert.deepEqual(a,generateLeaflessTree(config));assert(a.length<=config.budget);

@@ -7,7 +7,7 @@ import {generateLeaflessTree,TREE_GENERATOR_PROFILES} from '../dist/organic-tree
 import {planTreePlanting,treePlantingPlan} from '../dist/tree-neighbors.mjs';
 for(const p of TREE_GENERATOR_PROFILES){
  const nodes=generateLeaflessTree(p);
- if(p.key!=='stump')assert(nodes.every(n=>n.tip!=='broken'),p.key+' mixed natural tips');
+ if(p.key!=='stump'&&p.tipStyle!=='broken')assert(nodes.every(n=>n.tip!=='broken'),p.key+' mixed natural tips');
 }
 assert(generateLeaflessTree({...TREE_GENERATOR_PROFILES[0],tipStyle:'broken'}).some(n=>n.tip==='broken'));
 assert(generateLeaflessTree(TREE_GENERATOR_PROFILES.find(p=>p.key==='stump')).some(n=>n.tip==='broken'));

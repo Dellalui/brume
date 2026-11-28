@@ -56,7 +56,7 @@ function solve(map,o){
  if(o.treeConfig?.adaptCrowns===false)return fail('Un obstacle occupe la couronne de cet arbre.');
  const original=o.treeGraph,root=original[0].slice(),g=[root],ids=new Map([[0,0]]),terminated=new Set(),source=[0],forcedTips=new Set();
  const children=new Map();for(let i=1;i<original.length;i++){const p=original[i][4];if(!children.has(p))children.set(p,[]);children.get(p).push(i)}
- if(query.edge([root[0],root[1],0],root,Math.min(.55,root[3]*1.22)+.08))return fail('La base du tronc est obstruée.');
+ if(root[5]!=='broken'&&query.edge([root[0],root[1],0],root,Math.min(.55,root[3]*1.22)+.08))return fail('La base du tronc est obstruée.');
  const steer=(d,angle,lift)=>[d[0]*Math.cos(angle)-d[1]*Math.sin(angle),d[0]*Math.sin(angle)+d[1]*Math.cos(angle),d[2]+lift];
  for(let i=1;i<original.length;i++){
   const n=original[i],oldParent=original[n[4]],pi=ids.get(n[4]);
@@ -70,10 +70,10 @@ function solve(map,o){
   for(const scale of [1,.85,.65,.42,.24]){
    if(trunk&&scale<.65)break;
    const candidates=[];
-   for(const angle of [0,.28,-.28,.56,-.56,.95,-.95,1.35,-1.35,1.8,-1.8,Math.PI])for(const lift of [0,.35,-.35,.70,-.70]){
+   for(const angle of [0,.28,-.28,.56,-.56,.95,-.95,1.35,-1.35])for(const lift of [0,.35,-.35,.70,-.70]){
     if(trunk&&(Math.abs(angle)>1||lift<-.35))continue;
     const v=unit(steer(u,angle,lift));
-    if(len(v)<.5)continue;
+    if(len(v)<.5||dot(v,u)<.15)continue;
     const pos=add(p.slice(0,3),mul(v,length*scale)).map(round);pos[2]=Math.max(.02,pos[2]);
     if(len(sub(pos,p.slice(0,3)))<=.115||pos[2]>24.6||Math.abs(pos[0])>29||Math.abs(pos[1])>29)continue;
     const r=round(Math.max(.013,n[3]*(scale<.65?.65:1)));

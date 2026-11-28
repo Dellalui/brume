@@ -2,7 +2,7 @@ import {TREE_GENERATOR_PROFILES,normalizeTreeConfig,generateLeaflessTree} from '
 import {treeTypeConfig} from './tree-types.mjs';
 export function mountTreeGenerator(root,{materials,onSave,onEquip,getSaved=()=>[]}){
  const select=root.querySelector('#treeProfile'),material=root.querySelector('#treeMaterial'),canvas=root.querySelector('#treePreview'),status=root.querySelector('#treeReport');
- const fields=['name','seed','height','radius','branches','reach','depth','spread','roots','budget','lean','curvature','taper','droop','tipStyle','variation'];
+ const fields=['name','seed','height','radius','branches','reach','depth','spread','roots','budget','lean','curvature','taper','droop','tipStyle','variation','twigDensity','dominance','asymmetry','irregularity','flexibility'];
  const field=k=>root.querySelector('#tree-'+k),adapt=root.querySelector('#treeAdaptCrowns');
  for(const p of TREE_GENERATOR_PROFILES){const o=document.createElement('option');o.value=p.key;o.textContent=p.name;select.append(o)}
  for(const [id,b] of Object.entries(materials)){if(['water','lava','air'].includes(id)||b.solid===false)continue;const o=document.createElement('option');o.value=id;o.textContent=b.name||id;material.append(o)}
@@ -25,5 +25,14 @@ export function mountTreeGenerator(root,{materials,onSave,onEquip,getSaved=()=>[
  canvas.addEventListener('pointermove',e=>{if(drag===null)return;view+=(e.clientX-drag)*.015;drag=e.clientX;draw()});
  for(const event of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(event,()=>drag=null);
  root.querySelector('#treeRotate').addEventListener('click',()=>{view+=Math.PI/4;draw()});
- load();return {draw,config,refreshSaved};
+ const list=root.querySelector('#treeCatalogList'),family=root.querySelector('#treeCatalogFamily'),catalog=root.querySelector('#treeCatalog'),custom=root.querySelector('#treeCustom'),ct=root.querySelector('#treeCatalogTab'),ut=root.querySelector('#treeCustomTab');
+ function show(customMode){catalog.hidden=customMode;custom.hidden=!customMode;ct.classList.toggle('primary',!customMode);ut.classList.toggle('primary',customMode);if(!customMode)renderCatalog()}
+ function renderCatalog(){
+  list.replaceChildren();
+  const entries=family.value==='saved'?getSaved().map(p=>p.config):TREE_GENERATOR_PROFILES.filter(p=>{const a=normalizeTreeConfig(p).architecture;return family.value==='all'||(family.value==='dead'?['cut','log','dead'].includes(a):family.value==='conifer'?p.material==='pinewood'&&!['cut','log','dead'].includes(a):p.material!=='pinewood'&&!['cut','log','dead'].includes(a))});
+  for(const p of entries){const c=treeTypeConfig(p),row=document.createElement('div'),name=document.createElement('strong'),info=document.createElement('small'),equip=document.createElement('button'),edit=document.createElement('button');row.className='tree-catalog-card';name.textContent=c.name;info.textContent=c.architecture==='log'?'Bois au sol':c.height+' unités · '+(c.architecture==='conifer'?'conifère sans aiguilles':'sans feuilles');equip.textContent=c.architecture==='log'?'Poser':'Planter';equip.addEventListener('click',()=>onEquip(c));edit.textContent='Personnaliser';edit.addEventListener('click',()=>{select.value=c.key;material.value=c.material;for(const k of fields)field(k).value=c[k];adapt.checked=c.adaptCrowns;saved.value='';update.disabled=true;show(true);draw()});row.append(name,info,equip,edit);list.append(row)}
+  if(!entries.length)list.textContent='Aucun type personnalisé enregistré.';
+ }
+ ct.addEventListener('click',()=>show(false));ut.addEventListener('click',()=>{refreshSaved();show(true)});family.addEventListener('change',renderCatalog);
+ load();show(false);return {draw,config,refreshSaved};
 }
