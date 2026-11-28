@@ -1,6 +1,7 @@
 import * as W from './world.mjs';
 import {TREE_PROFILES,generateLeaflessTree,treeForm,normalizeTreeConfig} from './organic-trees.mjs';
 import {packTreeGraph,validTreeGraph,treeExtent,isUnifiedTree} from './unified-trees.mjs';
+import {ensureTreeTypes,treeVariant,plantSequence,treeTypeConfig} from './tree-types.mjs';
 import {previewConnectionData,rebuildConnections} from './connected-blocks.mjs';
 import {formAllowed,isForm,orientForm,formInfo,hasBlockForm,formsOverlap,connectionEligible,isConnectedForm,isSpatialForm} from './block-forms.mjs';
 import * as V from './blocks.mjs';
@@ -43,8 +44,8 @@ export function ensureTreeExamples(world){
  }
  world.builtinTreeSchemasRevision=4;
 }
-export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];ensureTreeExamples(world);return world.builder}
-export function itemName(item,world){if(!item)return'Vide';if(formAllowed(item)&&isForm(item.shape))return (W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(item.shape).name;if(item.kind==='block')return liquidPresetName(item.material,item.liquidStyle)||(item.liquidStyle?((W.BLOCKS[item.material]?.name||'Bloc')+' personnalisée'):(W.BLOCKS[item.material]?.name||'Bloc'));if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}
+export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];ensureTreeExamples(world);ensureTreeTypes(world);return world.builder}
+export function itemName(item,world){if(!item)return'Vide';if(formAllowed(item)&&isForm(item.shape))return (W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(item.shape).name;if(item.kind==='block')return liquidPresetName(item.material,item.liquidStyle)||(item.liquidStyle?((W.BLOCKS[item.material]?.name||'Bloc')+' personnalisée'):(W.BLOCKS[item.material]?.name||'Bloc'));if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='treeType')return item.name||item.treeConfig?.name||'Arbre procédural';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}
 export function dimensions(item){const n=(v,f,max)=>Number.isFinite(+v)?W.clamp(snap(+v),.1,max):f;return{w:n(item.w,1,32),d:n(item.d,1,32),h:n(item.h,1,32)}}
 export function blockObject(material,x,y,z,w,d,h,yaw,id){return{...W.newObject('block',x,y,id),name:W.BLOCKS[material]?.name||'Bloc',material,w,d,height:h,baseZ:snap(z),facing:yaw,group:null,blocking:W.BLOCKS[material]?.solid!==false,blocksSight:!!W.BLOCKS[material]?.opaque,shadow:true,frameCount:1,frames:{},...(W.BLOCKS[material]?.emissive?{light:{radius:5,power:1,color:W.BLOCKS[material].accent||W.BLOCKS[material].top}}:{})}}
 const rotate=(x,y,a)=>({x:x*Math.cos(a)-y*Math.sin(a),y:x*Math.sin(a)+y*Math.cos(a)});
@@ -70,6 +71,14 @@ export function placement(item,point,world,id=()=>crypto.randomUUID()){
  }else if((point.block||point.ground)&&n){
   if(n.z>.5)z=point.z;else if(n.z<-.5)z=point.z-size.h;
   else {center={x:Math.abs(n.x)>.5?point.x+n.x*(Math.abs(Math.cos(angle))*size.w+Math.abs(Math.sin(angle))*size.d)/2:center.x,y:Math.abs(n.y)>.5?point.y+n.y*(Math.abs(Math.sin(angle))*size.w+Math.abs(Math.cos(angle))*size.d)/2:center.y};z=point.block?.z??Math.floor(point.z)}
+ }
+ if(item.kind==='treeType'){
+  const config=treeTypeConfig(item.treeConfig),def=W.BLOCKS[config.material];if(!def||def.solid===false||['water','lava','air'].includes(config.material))return[];
+  // Each click anchors the trunk at the target cell, independently of the
+  // changing crown dimensions. Only successful placement advances sequence.
+  if(n&&n.z<.5)return[];
+  const v=treeVariant(config,plantSequence(world)),o={...W.newObject('tree',0,0,id()),...v.extent,name:config.name,material:config.material,treeGraph:v.graph,treeConfig:config,treeVariantSeed:v.seed,treeVariantSequence:v.sequence,canopy:0,group:null,baseZ:z,facing:yaw,blocking:true,blocksSight:!!def.opaque};
+  o.x=Math.floor(point.x)+.5-o.w/2;o.y=Math.floor(point.y)+.5-o.d/2;return[o];
  }
  if(item.kind==='schema')return schemaPlacement(world.schematics.find(s=>s.id===item.id),{x:point.x,y:point.y,z},yaw,id);
  if(item.kind==='block'){

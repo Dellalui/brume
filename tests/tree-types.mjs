@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {treeVariant,treeTypeConfig,ensureTreeTypes,saveTreeType,makeTreeItem,advanceTreeSequence} from '../dist/tree-types.mjs';
+import {placement} from '../dist/construction.mjs';
+import {validTreeGraph} from '../dist/unified-trees.mjs';
+const c=treeTypeConfig({key:'crown',variation:12});
+const a=treeVariant(c,0),b=treeVariant(c,1);
+assert(validTreeGraph(a.graph)&&validTreeGraph(b.graph));
+assert.notDeepEqual(a.graph,b.graph);
+assert.deepEqual(a.graph.map(n=>n.slice(4)),b.graph.map(n=>n.slice(4)));
+assert.deepEqual(treeVariant({...c,variation:0},0).graph,treeVariant({...c,variation:0},1).graph);
+const world={schematics:[],builder:{}},item=makeTreeItem(c);
+saveTreeType(world,c,'custom');assert.equal(ensureTreeTypes(world).length,1);assert.equal(world.schematics.length,0);
+const p={x:40.1,y:40.2,z:0,normal:{x:0,y:0,z:1}};
+const first=placement(item,p,world,()=> 'first')[0],preview=placement(item,p,world,()=> 'preview')[0];
+assert.deepEqual(first.treeGraph,preview.treeGraph);assert.equal(first.x+first.w/2,40.5);
+advanceTreeSequence(world);const second=placement(item,p,world,()=> 'second')[0];assert.notDeepEqual(first.treeGraph,second.treeGraph);
+assert.deepEqual(placement(item,p,JSON.parse(JSON.stringify(world)),()=> 'reload')[0].treeGraph,second.treeGraph);
+console.log('PASS: persistent tree recipes, deterministic preview, bounded variations and fixed topology');
