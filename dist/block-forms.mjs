@@ -20,6 +20,18 @@ const rect=(x0,y0,z0,x1,y1,z1)=>prism([[x0,y0],[x1,y0],[x1,y1],[x0,y1]],z0,z1,[x
 const square=[[0,0],[1,0],[1,1],[0,1]],back=[[0,.5],[1,.5],[1,1],[0,1]],front=[[0,0],[1,0],[1,.5],[0,.5]];
 const circle=(r=.5,n=16)=>Array.from({length:n},(_,i)=>[.5+r*Math.cos(i*2*Math.PI/n),.5+r*Math.sin(i*2*Math.PI/n)]);
 const base=()=>rect(0,0,0,1,1,.5);
+// Connection bits are local +X, +Y, -X, -Y. Each branch ends at the
+// cell boundary; no duplicate corner posts or overlap with the center.
+export const CONNECTED_FORMS=Object.freeze(['fence','connected-wall','railing']);
+export const isConnectedForm=id=>CONNECTED_FORMS.includes(id);
+function connectedParts(id,mask){
+ const wall=id==='connected-wall',rail=id==='railing',half=wall?.25:rail?.10:.15,lo=.5-half,hi=.5+half,bar=wall?.18:rail?.055:.07;
+ const p=[rect(lo,lo,0,hi,hi,1)],levels=wall?[[0,.85]]:rail?[[.83,.95],[.45,.53]]:[[.25,.4],[.7,.85]];
+ for(let i=0;i<4;i++)if(mask&(1<<i))for(const [z,h]of levels){
+  const a=.5-bar,b=.5+bar,xy=[[hi,a,1,b],[a,hi,b,1],[0,a,lo,b],[a,0,b,lo]][i];p.push(rect(xy[0],xy[1],z,xy[2],xy[3],h));
+ }
+ return p;
+}
 const definitions=[
  ['box','Bloc complet','■',()=>[rect(0,0,0,1,1,1)]],
  ['slab','Dalle (demi-hauteur)','▰',()=>[base()]],
@@ -43,6 +55,8 @@ const definitions=[
  ['frame','Cadre de fenêtre','⊞',()=>[rect(0,.375,0,.2,.625,1),rect(.8,.375,0,1,.625,1),rect(.2,.375,0,.8,.625,.2),rect(.2,.375,.8,.8,.625,1)]],
  ['arch','Passage voûté','∩',()=>[rect(0,.25,0,.22,.75,1),rect(.78,.25,0,1,.75,1),prism([[.22,.25],[.78,.25],[.78,.75],[.22,.75]],.8,1),prism([[.22,.25],[.4,.25],[.4,.75],[.22,.75]],x=>.58+(x-.22)*(.22/.18),.8),prism([[.6,.25],[.78,.25],[.78,.75],[.6,.75]],x=>.8-(x-.6)*(.22/.18),.8)]],
  ['fence','Barrière','╫',()=>[rect(0,.35,0,.18,.65,1),rect(.82,.35,0,1,.65,1),rect(.18,.43,.25,.82,.57,.4),rect(.18,.43,.7,.82,.57,.85)]],
+ ['connected-wall','Mur connecté','╋',()=>connectedParts('connected-wall',5)],
+ ['railing','Rambarde connectée','╫',()=>connectedParts('railing',5)],
  ['diagonal','Mur diagonal','╲',()=>[prism([[0,0],[.22,0],[1,.78],[1,1],[.78,1],[0,.22]],0,1)]],
  ['chamfer','Bloc biseauté','⬟',()=>[prism([[0,0],[1,0],[1,.7],[.7,1],[0,1]],0,1)]],
  ['pyramid','Pyramide','▲',()=>[poly([[0,0,0],[1,0,0],[1,1,0],[0,1,0],[.5,.5,1]],[[0,1,2,3],[0,1,4],[1,2,4],[2,3,4],[3,0,4]])]],
@@ -54,6 +68,9 @@ const definitions=[
 ];
 export const BLOCK_FORMS=Object.freeze(definitions.map(([id,name,symbol])=>Object.freeze({id,name,symbol})));
 const catalog=new Map(definitions.filter(d=>d[3]).map(([id,,,factory])=>[id,factory()]));
+const connectedCatalog=new Map(CONNECTED_FORMS.map(id=>[id,Array.from({length:16},(_,mask)=>connectedParts(id,mask))]));
+const grid=v=>Number.isFinite(v)&&Math.abs(v-Math.round(v))<1e-5;
+export function connectionEligible(o){return o?.type==='block'&&isConnectedForm(o.blockForm)&&o.formConnect!==false&&grid(o.x)&&grid(o.y)&&Math.abs((o.w||1)-1)<EPS&&Math.abs((o.d||1)-1)<EPS&&Number.isFinite(o.baseZ)&&Math.abs(o.offsetZ||0)<EPS&&Math.abs((o.height||1)-1)<EPS&&grid((o.facing||0)/(Math.PI/2))&&!o.formFlip&&!o.formMirror}
 export const formInfo=id=>BLOCK_FORMS.find(f=>f.id===id)||BLOCK_FORMS[0];
 export const formId=id=>id==='corner'?'legacy-corner':formInfo(id).id;
 export const slotShape=id=>id==='legacy-corner'?'corner':id;
@@ -79,6 +96,20 @@ export function orientForm(item,p){
   flipZ=(n.z||0)<-.5||Math.abs(n.z||0)<.5&&p.z-half>(s?.height||1)*.5+EPS;
  }
  const out={x:round(cx-w/2),y:round(cy-d/2),z,w,d,h,angle,flipZ,shape:id,mirror:false};
+ // Aim at the logical cell of a post rather than its narrow physical
+ // surface. Otherwise a fence placed against a fence drifts off-grid.
+ if(isConnectedForm(id)&&!explicit&&step===1&&w===1&&d===1&&h===1){
+  const horizontal=Math.abs(n.z||0)<.5&&Math.max(Math.abs(n.x||0),Math.abs(n.y||0))>.5;
+  if(horizontal&&connectionEligible(s)){
+   out.x=Math.round(s.x)+(Math.abs(n.x)>Math.abs(n.y)?Math.sign(n.x):0);
+   out.y=Math.round(s.y)+(Math.abs(n.y)>=Math.abs(n.x)?Math.sign(n.y):0);
+   out.z=s.baseZ;
+  }else if(horizontal){
+   out.x=Math.floor(p.x+(n.x||0)*.001);out.y=Math.floor(p.y+(n.y||0)*.001);
+   if(s&&grid(s.x)&&grid(s.y)&&s.w===1&&s.d===1){out.x=Math.round(s.x)+(Math.abs(n.x)>Math.abs(n.y)?Math.sign(n.x):0);out.y=Math.round(s.y)+(Math.abs(n.y)>=Math.abs(n.x)?Math.sign(n.y):0)}
+  }else{out.x=Math.floor(p.x);out.y=Math.floor(p.y)}
+  out.angle=0;out.flipZ=false;
+ }
  if(id==='stairs'&&!explicit&&w===1&&d===1&&h===1&&p.formMap){
   const rise=[-Math.round(Math.sin(angle)),Math.round(Math.cos(angle))],left=[-rise[1],rise[0]],objects=p.formMap.objects||[];
   const neighbor=sign=>objects.find(o=>hasBlockForm(o)&&['stairs','stairs-inner','stairs-outer'].includes(o.blockForm)&&Math.abs((o.baseZ||0)-z)<EPS&&!!o.formFlip===flipZ&&o.w===1&&o.d===1&&o.height===1&&Math.abs(o.x+.5-cx-sign*rise[0])<EPS&&Math.abs(o.y+.5-cy-sign*rise[1])<EPS);
@@ -86,7 +117,7 @@ export function orientForm(item,p){
  }
  return out;
 }
-function localParts(o){return catalog.get(hasBlockForm(o)?o.blockForm:'box')||catalog.get('box')}
+function localParts(o){if(connectionEligible(o)&&Number.isInteger(o.formConnections))return connectedCatalog.get(o.blockForm)[o.formConnections&15];return catalog.get(hasBlockForm(o)?o.blockForm:'box')||catalog.get('box')}
 function transformed(o,p,z=0){const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),cx=o.x+w/2,cy=o.y+d/2;return p.vertices.map(([x,y,v])=>{const u=(o.formMirror?.5-x:x-.5)*w,t=(y-.5)*d;return [cx+u*c-t*s,cy+u*s+t*c,z+(o.formFlip?1-v:v)*h]})}
 function worldPolys(o,z=o.baseZ||0){return localParts(o).map(p=>poly(transformed(o,p,z),p.faces))}
 function toLocal(o,x,y,z=0){const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),dx=x-(o.x+w/2),dy=y-(o.y+d/2);return [(dx*c+dy*s)/w+.5,(-dx*s+dy*c)/d+.5,(z-(o.baseZ||0))/h]}
@@ -110,7 +141,7 @@ function proxyBoxes(p){if(p.box)return[p.box];const count=6,boxes=[];
  return boxes;
 }
 const proxies=new Map([...catalog].map(([k,p])=>[k,p.flatMap(proxyBoxes)]));
-export function formCollisionBoxes(o,base=o.baseZ||0){if(!hasBlockForm(o))return[o];const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),cx=o.x+w/2,cy=o.y+d/2;return proxies.get(o.blockForm).map(([x0,y0,z0,x1,y1,z1])=>{let u=(o.formMirror?.5-(x0+x1)/2:(x0+x1)/2-.5)*w,v=((y0+y1)/2-.5)*d,ww=(x1-x0)*w,dd=(y1-y0)*d;return {...o,blockForm:undefined,formFlip:undefined,formMirror:undefined,x:cx+u*c-v*s-ww/2,y:cy+u*s+v*c-dd/2,w:ww,d:dd,baseZ:base+(o.formFlip?1-z1:z0)*h,offsetZ:0,height:(z1-z0)*h}})}
+export function formCollisionBoxes(o,base=o.baseZ||0){if(!hasBlockForm(o))return[o];const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),cx=o.x+w/2,cy=o.y+d/2;return (connectionEligible(o)&&Number.isInteger(o.formConnections)?localParts(o).map(p=>p.box):proxies.get(o.blockForm)).map(([x0,y0,z0,x1,y1,z1])=>{let u=(o.formMirror?.5-(x0+x1)/2:(x0+x1)/2-.5)*w,v=((y0+y1)/2-.5)*d,ww=(x1-x0)*w,dd=(y1-y0)*d;return {...o,blockForm:undefined,formFlip:undefined,formMirror:undefined,formConnections:undefined,x:cx+u*c-v*s-ww/2,y:cy+u*s+v*c-dd/2,w:ww,d:dd,baseZ:base+(o.formFlip?1-z1:z0)*h,offsetZ:0,height:(z1-z0)*h}})}
 export function formGeometry(T,o){const groups=[[],[],[],[],[],[]],w=o.w||1,d=o.d||1,h=o.height||1;
  for(const p of localParts(o)){const vs=p.vertices.map(([x,y,z])=>[(o.formMirror?.5-x:x-.5)*w,(o.formFlip?1-z:z)*h,(y-.5)*d]);const center=mean(vs);for(const raw of p.faces){let f=[...raw],n=null;for(let i=1;i<f.length-1&&!n;i++)n=unit(cross(sub(vs[f[i]],vs[f[0]]),sub(vs[f[i+1]],vs[f[0]])));if(!n)continue;if(dot(n,sub(center,vs[f[0]]))>0){n=n.map(v=>-v);f.reverse()}const mi=n[1]>.25?2:n[1]<-.25?3:0;for(let i=1;i<f.length-1;i++){const tri=[vs[f[0]],vs[f[i]],vs[f[i+1]]];if(norm(cross(sub(tri[1],tri[0]),sub(tri[2],tri[0])))<EPS)continue;for(const v of tri)groups[mi].push({v,n,uv:Math.abs(n[1])>.5?[v[0]+w/2,v[2]+d/2]:Math.abs(n[0])>Math.abs(n[2])?[v[2]+d/2,v[1]]:[v[0]+w/2,v[1]]})}}}
  const positions=[],normals=[],uvs=[],g=new T.BufferGeometry();for(let i=0;i<groups.length;i++){const start=positions.length/3;for(const {v,n,uv}of groups[i]){positions.push(...v);normals.push(...n);uvs.push(...uv)}if(groups[i].length)g.addGroup(start,groups[i].length,i)}g.setAttribute('position',new T.Float32BufferAttribute(positions,3));g.setAttribute('normal',new T.Float32BufferAttribute(normals,3));g.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));g.computeBoundingBox();g.computeBoundingSphere();return g;
@@ -123,4 +154,5 @@ export function shapeGridBlocked(o,x,y,z,height,radius,base=o.baseZ||0){
  for(let i=0;i<8;i++){const a=i*Math.PI/4;if(blocked(shapeIntervals(o,x+radius*Math.cos(a),y+radius*Math.sin(a),base)))return true}return false;
 }
 export function shapeGridStepBlocked(o,a,b,z,height,radius,base=o.baseZ||0){const n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)*8));for(let i=0;i<=n;i++){const t=i/n;if(shapeGridBlocked(o,a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,z,height,radius,base))return true}return false}
-export function formIconPolygons(id){const parts=catalog.get(id)||catalog.get('corner-wall'),camera=[1,-1,1],out=[];for(const p of parts)for(let i=0;i<p.faces.length;i++){const n=p.planes[i].n;if(dot(n,camera)<=EPS)continue;const vs=p.faces[i].map(j=>p.vertices[j]);out.push({depth:dot(mean(vs),camera),points:vs.map(([x,y,z])=>[8+24*(x+y),40+12*(x-y)-29*z].map(round).join(',')).join(' '),shade:n[2]>.25?1:n[0]>.25?.72:.86})}return out.sort((a,b)=>a.depth-b.depth)}
+const iconCache=new Map();
+export function formIconPolygons(id){if(iconCache.has(id))return iconCache.get(id);const parts=isConnectedForm(id)?connectedCatalog.get(id)[5]:catalog.get(id)||catalog.get('corner-wall'),camera=[1,-1,1],out=[];for(const p of parts)for(let i=0;i<p.faces.length;i++){const n=p.planes[i].n;if(dot(n,camera)<=EPS)continue;const vs=p.faces[i].map(j=>p.vertices[j]);out.push({depth:dot(mean(vs),camera),points:vs.map(([x,y,z])=>[8+24*(x+y),40+12*(x-y)-29*z].map(round).join(',')).join(' '),shade:n[2]>.25?1:n[0]>.25?.72:.86,top:n[2]>.25})}out.sort((a,b)=>a.depth-b.depth);iconCache.set(id,out);return out}

@@ -18,6 +18,7 @@ import {NPC_PRESETS,applyNpcPreset,clearNpcPreset,ensureNpcPreset,currentNpcPres
 import {createAppearanceViewer,angleFrame,wrapAngle} from './appearance-preview.mjs';
 import * as C from './construction.mjs';
 import {BLOCK_FORMS,formAllowed,isForm,slotShape,hasBlockForm,orientForm} from './block-forms.mjs';
+import {rebuildConnections,updateConnections} from './connected-blocks.mjs';
 import {createBlockFormMenu} from './block-form-menu.mjs';
 import * as BT from './block-tools.mjs';
 import * as W from './world.mjs';
@@ -52,7 +53,7 @@ let creativeReady=false,creativeStroke=null,creativeTimer=null,creativePreviewTi
 let loaded;try{loaded=globalThis.brumesLoadedWorld||W.readSavedWorld(localStorage)}catch{loaded={world:W.defaultWorld(),canSave:false,recovered:true}}
 let world=loaded.world;
 if(!world.playerVisionRevision){for(const m of world.maps)for(const o of m.objects)if(W.character(o)){o.vision??={range:12,dark:2};if(o.vision.angle==null||o.vision.angle===150)o.vision.angle=180;if(o.vision.far==null||o.vision.far===(o.vision.range||12)+6)o.vision.far=64}world.playerVisionRevision=1}
-C.initBuilder(world);expireEffects(world);W.upgradePhysics(world);W.upgradePresentation(world);W.upgradeBlockWorld(world);const recoverySnapshot=capture(world),recoveredActors=W.repairEmbeddedActors(world);
+C.initBuilder(world);expireEffects(world);W.upgradePhysics(world);W.upgradePresentation(world);W.upgradeBlockWorld(world);for(const m of world.maps)rebuildConnections(m);const recoverySnapshot=capture(world),recoveredActors=W.repairEmbeddedActors(world);
 const map=()=>world.maps.find(m=>m.id===world.active)||world.maps[0];
 let selection=map().objects.find(W.character)?.id||null,lastActor=selection,mode='play',tool='select',adding=null,viewMode='mj',group='decor',drag=null,aim=null,hover=null,drawBrush=null,route=[],routeFor=null,moving=null,dirty=true,lights=null,vision=new Set(),lightCache=new Map(),pendingDraw=false,panelZ=25,notesTimer,nextEffectClockCheck=0,addingVariant='oak',placementYaw=0,paletteDrag=null,terrainEpoch=0,visionEpoch=0,visibilityKey='',previewTimer=null,previewCell=null,heldArrows=new Set(),sight=new Map(),sightDisplay=new Map(),sightAllowed=new Set(),sightContext='',sightTime=0;
 const images=new Map(),imageLoading=new Map(),undo=[],redo=[],explorations=new Map(),collapsed=new Set();if(recoveredActors)undo.push(recoverySnapshot);for(let g of map().groups)if((map().objects.filter(o=>o.group===g.id).length+Object.values(map().blockGroups||{}).filter(id=>id===g.id).length)>12)collapsed.add(g.id);
@@ -85,8 +86,8 @@ function queueSave(){clearTimeout(saveTimer);saveTimer=setTimeout(save,300)}
 function save(){clearTimeout(saveTimer);saveTimer=null;if(!loaded.canSave){$('#saveStatus').textContent='Ancienne sauvegarde protégée · écriture suspendue';return false}try{if(globalThis.brumesWorldStorage){$('#saveStatus').textContent='Enregistrement…';globalThis.brumesWorldStorage.save(world).then(()=>{$('#saveStatus').textContent='Enregistré sur ce navigateur'}).catch(()=>{$('#saveStatus').textContent='Sauvegarde impossible · exportez votre monde'});return true}localStorage.setItem('brumes-v4',JSON.stringify(world));$('#saveStatus').textContent='Enregistré sur ce navigateur';return true}catch{$('#saveStatus').textContent='Stockage plein · sauvegarde impossible';return false}}
 function remember(){undo.push(capture(world));if(undo.length>35)undo.shift();redo.length=0;updateHistory()}
 function updateHistory(){$('#undo').disabled=!undo.length;$('#redo').disabled=!redo.length}
-function restore(from,to){if(!from.length)return;throwQueue.clear();clearBlockActivations();inspectedVoxel=null;clearNavigationInput();effectListWorld=null;stopMovement();to.push(capture(world));world=materialize(from.pop());pathSync.reset();expireEffects(world);ensureEffectClock();selection=map().objects.some(o=>o.id===selection)?selection:null;dirty=true;lights=null;lightCache.clear();save();refresh();preload()}
-function invalidate(){map().buildRevision=(map().buildRevision||0)+1;cancelPath();dirty=true;lights=null;visibilityKey='';terrainEpoch++;lightCache.clear();route=[];routeFor=null;clearTimeout(previewTimer);schedule()}
+function restore(from,to){if(!from.length)return;throwQueue.clear();clearBlockActivations();inspectedVoxel=null;clearNavigationInput();effectListWorld=null;stopMovement();to.push(capture(world));world=materialize(from.pop());for(const m of world.maps)rebuildConnections(m);pathSync.reset();expireEffects(world);ensureEffectClock();selection=map().objects.some(o=>o.id===selection)?selection:null;dirty=true;lights=null;lightCache.clear();save();refresh();preload()}
+function invalidate(connectionDelta=null){if(connectionDelta)updateConnections(map(),connectionDelta);else rebuildConnections(map());map().buildRevision=(map().buildRevision||0)+1;cancelPath();dirty=true;lights=null;visibilityKey='';terrainEpoch++;lightCache.clear();route=[];routeFor=null;clearTimeout(previewTimer);schedule()}
 function change(fn,rebuild=true){stopMovement();remember();fn();for(const o of map().objects){ensureNpcPreset(o);loadNpcAppearance(o)}invalidate();save();if(rebuild)refresh()}
 function log(text){world.log.unshift({text,time:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})});world.log=world.log.slice(0,60);save();renderJournal()}
 var partyVisionCache,visionPending=false;
@@ -636,7 +637,7 @@ function commitThrownImpacts(impacts,metrics={}){
  const m=map();let token=null;const result=applyImpactBatch(m,impacts,W,()=>{const t=performance.now();stopCreativeStroke();stopMovement();remember();token=scene.beginImpactEdit(m,terrainEpoch);metrics['historique impacts']=performance.now()-t},metrics);
  if(result.changed){
   if(selection&&!m.objects.some(o=>o.id===selection))selection=null;
-  const t=performance.now();settleBlockActors();invalidate();scene.finishImpactEdit(m,terrainEpoch,token,result.changes);metrics['invalidation impacts']=performance.now()-t;const s=performance.now();save();metrics['sauvegarde impacts']=performance.now()-s;const u=performance.now();refresh();metrics['interface impacts']=performance.now()-u;
+  const t=performance.now();invalidate({removed:result.changes.objects});settleBlockActors();scene.finishImpactEdit(m,terrainEpoch,token,result.changes);metrics['invalidation impacts']=performance.now()-t;const s=performance.now();save();metrics['sauvegarde impacts']=performance.now()-s;const u=performance.now();refresh();metrics['interface impacts']=performance.now()-u;
  }
  if(result.destructive)toast((result.destructive>1?result.destructive+' impacts · ':'')+result.count+' bloc(s) ou couches de sol retirés · '+result.protectedCount+' protégé(s) · '+result.resistedCount+' résistant(s)'+(result.limited?' · limite de 512 éléments par impact':''));
 }
@@ -671,7 +672,7 @@ function creativeUse(){
   if(item.kind==='block'&&parts.every(o=>o.type==='block'&&Number.isFinite(o.baseZ))){placementToken=scene.beginPlacementEdit(map(),terrainEpoch);placed=parts}
   map().objects.push(...parts);soundMaterial=parts[0]?.material||soundMaterial;changed=true;
  }
- if(changed){playWorldSound(materialSound(soundMaterial,W.BLOCKS[soundMaterial]?.category,creativeStroke.button===0),p,{range:20,volume:.7});creativeStroke.changed=true;settleBlockActors();invalidate();if(placementToken)scene.finishPlacementEdit(map(),terrainEpoch,placementToken,placed);else if(removalToken)scene.finishRemovalEdit(map(),terrainEpoch,removalToken,removed);creativePreview();}
+ if(changed){playWorldSound(materialSound(soundMaterial,W.BLOCKS[soundMaterial]?.category,creativeStroke.button===0),p,{range:20,volume:.7});creativeStroke.changed=true;invalidate(placed||removed?{added:placed||[],removed:removed?.objects||[]}:null);settleBlockActors();if(placementToken)scene.finishPlacementEdit(map(),terrainEpoch,placementToken,placed);else if(removalToken)scene.finishRemovalEdit(map(),terrainEpoch,removalToken,removed);creativePreview();}
 }
 function saveCreativeSchema(){try{if(!creativeZone)throw Error('Définissez les deux coins de la zone.');const schema=C.captureSchema(map(),creativeZone,$('#schemaName').value,uid(),$('#schemaActors').checked);change(()=>world.schematics.push(schema));assignSlot({kind:'schema',id:schema.id,yaw:0,step:.1});creativeCategory='schemas';inventoryKey='';renderInventory();toast('Schéma enregistré : '+schema.objects.length+' éléments.')}catch(error){toast(error.message)}}
 function groupCreativeZone(){try{if(!creativeZone)throw Error('Définissez une zone.');C.zoneContents(map(),creativeZone,$('#schemaActors').checked);const id=uid();change(()=>C.groupZone(map(),creativeZone,$('#schemaName').value,id,$('#schemaActors').checked));collapsed.add(id);renderLayers();toast('Zone regroupée dans les calques.')}catch(error){toast(error.message)}}

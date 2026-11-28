@@ -1,3 +1,4 @@
+import {formId,isForm,formIconPolygons} from './block-forms.mjs';
 import {createCanvasProperties} from './canvas-properties.mjs';
 import {monitorLayout,monitorPosition,formatMoney} from './character-ledger.mjs';
 import {BODY_PARTS,bodyCondition,conditionColor} from './body-condition.mjs';
@@ -39,6 +40,18 @@ export function inventoryLayout(p,category='blocks'){
  const forms={x:p.x+pad,y:top+36,w:p.w-2*pad,h:Math.max(0,p.y+p.h-top-50)};
  return{pad,tabs,top,footerY,extra,search,family,grid,n,cw,ch,tileGap,forms}
 }
+export function drawFormIcon(ctx,x,y,size,d,shape,imageFor){
+ const faces=formIconPolygons(shape),def=d.material||{};
+ ctx.save();ctx.translate(x,y);ctx.scale(size/49,size/49);ctx.translate(-32,-26);
+ for(const f of faces){const points=f.points.split(' ').map(p=>p.split(',').map(Number));if(points.length<3)continue;
+  ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);ctx.closePath();
+  const base=(f.top?def.top:def.side)||d.color||'#81977b';ctx.fillStyle=base;ctx.fill();
+  const spec=f.top?d.topTexture:d.sideTexture,img=spec?.url?imageFor(spec.url):null;
+  if(img?.complete&&img.naturalWidth){ctx.save();ctx.clip();ctx.globalAlpha=spec.detailOnly?.35:.8;ctx.drawImage(img,8,0,48,52);ctx.restore()}
+  ctx.fillStyle='rgba(0,0,0,'+(1-f.shade)+')';ctx.fill();ctx.strokeStyle='#ffffff35';ctx.lineWidth=.65;ctx.stroke();
+ }
+ ctx.restore();
+}
 export function mountCanvasHUD(doc,api){
  const viewport=doc.getElementById('viewport'),world=doc.getElementById('map'),win=doc.defaultView,layer=doc.createElement('canvas'),ctx=layer.getContext('2d');
  if(!viewport||!world||!ctx)return null;
@@ -57,7 +70,7 @@ export function mountCanvasHUD(doc,api){
  if(symbol&&r.w>=120){text(symbol,r.x+20,r.y+r.h/2,22,18,colors.gold,'center',650);text(label,r.x+r.w/2+9,r.y+r.h/2,r.w-42,13,disabled?colors.muted:colors.fg,'center',selected?700:500)}else if(symbol&&r.w>=62){text(symbol,r.x+r.w/2,r.y+r.h*.31,r.w-14,13,colors.gold,'center',650);text(label,r.x+r.w/2,r.y+r.h*.73,r.w-10,10,colors.fg,'center',selected?700:500)}
  else text(label,r.x+r.w/2,r.y+r.h/2,r.w-8,Math.min(13,r.h*.46),disabled?colors.muted:colors.fg,'center',selected?700:500);if(!disabled)region(r,id,run)}
  const properties=createCanvasProperties(doc,viewport,ctx,{region,button,text,schedule,hover:r=>contains(r,cursor.x,cursor.y),close:api.closeProperties,image:imageFor});
- function icon(d,x,y,s){if(d.block){texturedCube(ctx,x,y,s,d,imageFor);return}if(d.thumbnail){const img=imageFor(d.thumbnail);if(img.complete&&img.naturalWidth){const k=s/Math.max(img.naturalWidth,img.naturalHeight),w=img.naturalWidth*k,h=img.naturalHeight*k;ctx.drawImage(img,x-w/2,y-h/2,w,h);return}}
+ function icon(d,x,y,s){if(d.block){const shape=formId(d.item?.shape);if(isForm(shape)||shape==='legacy-corner'){drawFormIcon(ctx,x,y,s,d,shape,imageFor);return}texturedCube(ctx,x,y,s,d,imageFor);return}if(d.thumbnail){const img=imageFor(d.thumbnail);if(img.complete&&img.naturalWidth){const k=s/Math.max(img.naturalWidth,img.naturalHeight),w=img.naturalWidth*k,h=img.naturalHeight*k;ctx.drawImage(img,x-w/2,y-h/2,w,h);return}}
  const col=d.color||colors.gold;sigil(ctx,x,y,s*.48,col);ctx.save();ctx.shadowColor=col;ctx.shadowBlur=d.item?.kind==='throw'?7:0;text(d.symbol||'◇',x,y,s*1.5,s*.8,col,'center',700);ctx.restore()}
  function itemLabel(d,r){const value=d.name||'',width=r.w-16;ctx.font='500 12px system-ui,sans-serif';const words=value.split(' ');if(ctx.measureText(value).width<=width){text(value,r.x+r.w/2,r.y+r.h-16,width,12,colors.fg,'center');return}let first='',rest=[];for(const word of words){if(!rest.length&&ctx.measureText((first+' '+word).trim()).width<=width)first=(first+' '+word).trim();else rest.push(word)}if(!first){text(value,r.x+r.w/2,r.y+r.h-16,width,12,colors.fg,'center');return}text(first,r.x+r.w/2,r.y+r.h-26,width,12,colors.fg,'center');text(rest.join(' '),r.x+r.w/2,r.y+r.h-12,width,12,colors.fg,'center')}
  function item(r,id,d,run,selected=false,slot=null,clip=null){const hover=contains(r,cursor.x,cursor.y)&&(!clip||contains(clip,cursor.x,cursor.y));arcaneTile(ctx,r,{selected,hover,accent:d.item?.kind==='throw'?d.color:null});icon(d,r.x+r.w/2,r.y+r.h*(slot===null?.35:.53),Math.max(8,Math.min(slot===null?50:37,r.w-14,r.h*.52)));if(slot!==null)text(slot+1,r.x+8,r.y+9,14,10,colors.muted);else itemLabel(d,r);const hit=clip?{x:Math.max(r.x,clip.x),y:Math.max(r.y,clip.y),w:Math.min(r.x+r.w,clip.x+clip.w)-Math.max(r.x,clip.x),h:Math.min(r.y+r.h,clip.y+clip.h)-Math.max(r.y,clip.y)}:r;if(hit.w>0&&hit.h>0)region(hit,id,run,{item:d.item,slot,inventory:slot===null})}
@@ -65,7 +78,7 @@ export function mountCanvasHUD(doc,api){
   s.slots.forEach((d,i)=>item({x:x+(i+1)*z+2,y,w:z-3,h:z},'slot-'+i,d,()=>api.slot(i),i===s.active,i));
   button({x:x+z*10+2,y,w:z,h:z},'control','◉',api.control,false,!s.canControl);
   const hoveredSlot=regions.find(r=>r.slot!=null&&contains(r,cursor.x,cursor.y));const name=s.slots[hoveredSlot?.slot??s.active]?.name||'';const plaque={x:w/2-Math.min(150,barW*.25)-38,y:y-30,w:Math.min(300,barW*.5),h:24};arcaneTile(ctx,plaque,{selected:true});text(name,plaque.x+plaque.w/2,y-18,plaque.w-16,14,colors.fg,'center',650);button({x:x+barW-91,y:y-31,w:91,h:24},'settings','Réglages · R',api.settings);
-  text('E : inventaire   ·   1–9 : raccourcis   ·   R : réglages',w/2,y+z+17,w-12,10,colors.muted,'center')
+  text('E : inventaire   ·   1–9 : raccourcis   ·   R : réglages   ·   Alt + molette : forme',w/2,y+z+17,w-12,10,colors.muted,'center')
  }
  function drawPlayerResources(s,w,h){
   const bars=s.player.bars||[],r=playerResourceLayout(w,h,bars.length,resourcePage);resourcePage=r.index;
