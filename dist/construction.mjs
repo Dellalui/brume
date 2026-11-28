@@ -1,6 +1,6 @@
 import * as W from './world.mjs';
-import {previewConnections} from './connected-blocks.mjs';
-import {formAllowed,isForm,orientForm,formInfo,hasBlockForm,formsOverlap,connectionEligible,isConnectedForm} from './block-forms.mjs';
+import {previewConnectionData} from './connected-blocks.mjs';
+import {formAllowed,isForm,orientForm,formInfo,hasBlockForm,formsOverlap,connectionEligible,isConnectedForm,isSpatialForm} from './block-forms.mjs';
 import * as V from './blocks.mjs';
 import {applyLiquidStyle,liquidPresetName} from './liquid-style.mjs';
 
@@ -27,7 +27,7 @@ export function placement(item,point,world,id=()=>crypto.randomUUID()){
  const size=dimensions(item),yaw=(item.yaw||0)*Math.PI/180,step=item.step===1?1:.1;
  if(formAllowed(item)&&isForm(item.shape)){
   const pose=orientForm({...item,...size},point),o=blockObject(item.material,pose.x,pose.y,pose.z,pose.w,pose.d,pose.h,pose.angle,id());
-  Object.assign(o,{baseZ:pose.z,blockForm:pose.shape,formFlip:pose.flipZ,formMirror:pose.mirror,name:(W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(pose.shape).name});if(isConnectedForm(o.blockForm)){o.formConnect=item.align!==false;if(connectionEligible(o))o.formConnections=previewConnections(point.formMap,o)}return[o];
+  Object.assign(o,{baseZ:pose.z,blockForm:pose.shape,formFlip:pose.flipZ,formMirror:pose.mirror,name:(W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(pose.shape).name});if(isConnectedForm(o.blockForm)){o.formConnect=item.align!==false;if(connectionEligible(o)){const {bits,sizes}=previewConnectionData(point.formMap,o);o.formConnections=bits;if(isSpatialForm(o.blockForm))o.formConnectionSizes=sizes}}return[o];
  }
  let center={x:snap(point.x-size.w/2,step)+size.w/2,y:snap(point.y-size.d/2,step)+size.d/2},z=snap(point.z),angle=yaw;
  const support=point.placedBlock,n=point.normal;

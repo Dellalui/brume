@@ -22,7 +22,58 @@ const circle=(r=.5,n=16)=>Array.from({length:n},(_,i)=>[.5+r*Math.cos(i*2*Math.P
 const base=()=>rect(0,0,0,1,1,.5);
 // Connection bits are local +X, +Y, -X, -Y. Each branch ends at the
 // cell boundary; no duplicate corner posts or overlap with the center.
-export const CONNECTED_FORMS=Object.freeze(['fence','connected-wall','railing']);
+// Spatial connectors use the same local cardinal bits, plus +Z (16) and
+// -Z (32). A shared three-bit radius code per arm prevents gaps when mixing
+// thick and thin pieces. All solids use the same polygonal ring resolution.
+const SPATIAL_SIZES=Object.freeze({'trunk-connected':5,'pillar-connected':4,'branch-connected':3,'pillar-thin-connected':2,'rod-connected':1,'spike-connected':1});
+const RADII=[0,.075,.14,.22,.32,.43],AXIS_BITS=[[0,2],[1,3],[4,5]];
+export const isSpatialForm=id=>Object.hasOwn(SPATIAL_SIZES,id);
+export const spatialSize=id=>SPATIAL_SIZES[id]||0;
+export const CONNECTED_FORMS=Object.freeze(['fence','connected-wall','railing',...Object.keys(SPATIAL_SIZES)]);
+export const connectionCompatible=(a,b)=>a===b||isSpatialForm(a)&&isSpatialForm(b);
+export function connectionRadiusCode(a,b){return Math.min(spatialSize(a),spatialSize(b))}
+function axialTube(axis,start,end,r0,r1,omitStart=false,omitEnd=false){
+ const n=12,other=[0,1,2].filter(i=>i!==axis);
+ const ring=(at,r)=>Array.from({length:n},(_,i)=>{const p=[.5,.5,.5],a=i*2*Math.PI/n;p[axis]=at;p[other[0]]+=r*Math.cos(a);p[other[1]]+=r*Math.sin(a);return p});
+ const p=poly([...ring(start,r0),...ring(end,r1)],[Array.from({length:n},(_,i)=>i),Array.from({length:n},(_,i)=>n+i),...Array.from({length:n},(_,i)=>[i,(i+1)%n,(i+1)%n+n,i+n])]);
+ p.omitCaps=[];if(omitStart)p.omitCaps.push([axis,start]);if(omitEnd)p.omitCaps.push([axis,end]);
+ // Swept box proxies remain narrow even for a 0.15-cell rod. Exact convex
+ // geometry is still used for overlap, visibility, ray and surface tests.
+ const steps=Math.abs(r0-r1)<EPS?1:3;p.cameraBoxes=[];
+ for(let i=0;i<steps;i++){const a=i/steps,b=(i+1)/steps,r=Math.max(r0+(r1-r0)*a,r0+(r1-r0)*b),lo=[.5-r,.5-r,.5-r],hi=[.5+r,.5+r,.5+r];lo[axis]=start+(end-start)*a;hi[axis]=start+(end-start)*b;p.cameraBoxes.push([...lo,...hi])}
+ return p;
+}
+function spatialParts(id,mask=0,sizes=0){
+ const radius=RADII[spatialSize(id)],point=id==='spike-connected',count=AXIS_BITS.flat().filter(b=>mask&(1<<b)).length,linked=b=>!!(mask&(1<<b)),r=b=>RADII[Math.min(spatialSize(id),(sizes>>>(b*3))&7)||spatialSize(id)];
+ // Prioritise a complete straight axis, then vertical in a junction.
+ const score=a=>AXIS_BITS[a].filter(linked).length*4+(a===2?2:a===0?1:0);
+ const axis=[2,0,1].sort((a,b)=>score(b)-score(a))[0],[pos,neg]=AXIS_BITS[axis],p=[];
+ if(point&&count<=1){
+  const positive=linked(pos),negative=linked(neg),towardsNegative=positive&&!negative;
+  if(towardsNegative){p.push(axialTube(axis,0,.5,0,radius,false,true),axialTube(axis,.5,1,radius,r(pos),true,true))}
+  else{p.push(axialTube(axis,0,.5,negative?r(neg):radius,radius,negative,true),axialTube(axis,.5,1,radius,0,true,false))}
+  return p;
+ }
+ // Isolated pieces and line ends keep a full-length stem. At a junction,
+ // only connected axes extend to a face; the unused half caps at the hub.
+ const lo=count<2||linked(neg)?0:.5-radius,hi=count<2||linked(pos)?1:.5+radius;
+ p.push(axialTube(axis,lo,.5,linked(neg)?r(neg):radius,radius,linked(neg),true));
+ p.push(axialTube(axis,.5,hi,radius,linked(pos)?r(pos):radius,true,linked(pos)));
+ for(let a=0;a<3;a++)if(a!==axis){
+  const [positive,negative]=AXIS_BITS[a];
+  // Taper a side arm at its root and match the neighbouring radius at
+  // the shared cell boundary. The root is inside the main stem.
+  if(linked(positive)){const end=r(positive),root=Math.min(radius,end*1.35);p.push(axialTube(a,.5,1,root,end,true,true))}
+  if(linked(negative)){const end=r(negative),root=Math.min(radius,end*1.35);p.push(axialTube(a,0,.5,end,root,true,true))}
+ }
+ return p;
+}
+const spatialCache=new Map();
+function spatialVariant(id,mask,sizes){
+ const k=id+':'+mask+':'+sizes;
+ let parts=spatialCache.get(k);if(!parts){parts=spatialParts(id,mask,sizes);spatialCache.set(k,parts);if(spatialCache.size>512)spatialCache.delete(spatialCache.keys().next().value)}
+ return parts;
+}
 export const isConnectedForm=id=>CONNECTED_FORMS.includes(id);
 function connectedParts(id,mask){
  const wall=id==='connected-wall',rail=id==='railing',half=wall?.25:rail?.10:.15,lo=.5-half,hi=.5+half,bar=wall?.18:rail?.055:.07;
@@ -51,6 +102,12 @@ const definitions=[
  ['roof-valley','Toit angle rentrant','∨',()=>[prism([[0,0],[1,0],[1,1]],(x,y)=>.8*x,(x,y)=>.2+.8*x),prism([[0,0],[1,1],[0,1]],(x,y)=>.8*y,(x,y)=>.2+.8*y)]],
  ['pillar','Pilier carré','▮',()=>[rect(.25,.25,0,.75,.75,1)]],
  ['pillar-round','Pilier rond','●',()=>[prism(circle(.32),0,1)]],
+ ['trunk-connected','Tronc connecté','⬤',()=>spatialParts('trunk-connected')],
+ ['pillar-connected','Pilier connecté','▮',()=>spatialParts('pillar-connected')],
+ ['branch-connected','Branche connectée','╋',()=>spatialParts('branch-connected')],
+ ['pillar-thin-connected','Pilier fin connecté','▏',()=>spatialParts('pillar-thin-connected')],
+ ['rod-connected','Tige fine connectée','│',()=>spatialParts('rod-connected')],
+ ['spike-connected','Pique automatique','▲',()=>spatialParts('spike-connected')],
  ['beam','Poutre','▬',()=>[rect(0,.3,.55,1,.7,1)]],
  ['frame','Cadre de fenêtre','⊞',()=>[rect(0,.375,0,.2,.625,1),rect(.8,.375,0,1,.625,1),rect(.2,.375,0,.8,.625,.2),rect(.2,.375,.8,.8,.625,1)]],
  ['arch','Passage voûté','∩',()=>[rect(0,.25,0,.22,.75,1),rect(.78,.25,0,1,.75,1),prism([[.22,.25],[.78,.25],[.78,.75],[.22,.75]],.8,1),prism([[.22,.25],[.4,.25],[.4,.75],[.22,.75]],x=>.58+(x-.22)*(.22/.18),.8),prism([[.6,.25],[.78,.25],[.78,.75],[.6,.75]],x=>.8-(x-.6)*(.22/.18),.8)]],
@@ -68,7 +125,7 @@ const definitions=[
 ];
 export const BLOCK_FORMS=Object.freeze(definitions.map(([id,name,symbol])=>Object.freeze({id,name,symbol})));
 const catalog=new Map(definitions.filter(d=>d[3]).map(([id,,,factory])=>[id,factory()]));
-const connectedCatalog=new Map(CONNECTED_FORMS.map(id=>[id,Array.from({length:16},(_,mask)=>connectedParts(id,mask))]));
+const connectedCatalog=new Map(CONNECTED_FORMS.filter(id=>!isSpatialForm(id)).map(id=>[id,Array.from({length:16},(_,mask)=>connectedParts(id,mask))]));
 const grid=v=>Number.isFinite(v)&&Math.abs(v-Math.round(v))<1e-5;
 export function connectionEligible(o){return o?.type==='block'&&isConnectedForm(o.blockForm)&&o.formConnect!==false&&grid(o.x)&&grid(o.y)&&Math.abs((o.w||1)-1)<EPS&&Math.abs((o.d||1)-1)<EPS&&Number.isFinite(o.baseZ)&&Math.abs(o.offsetZ||0)<EPS&&Math.abs((o.height||1)-1)<EPS&&grid((o.facing||0)/(Math.PI/2))&&!o.formFlip&&!o.formMirror}
 export const formInfo=id=>BLOCK_FORMS.find(f=>f.id===id)||BLOCK_FORMS[0];
@@ -100,7 +157,15 @@ export function orientForm(item,p){
  // surface. Otherwise a fence placed against a fence drifts off-grid.
  if(isConnectedForm(id)&&!explicit&&step===1&&w===1&&d===1&&h===1){
   const horizontal=Math.abs(n.z||0)<.5&&Math.max(Math.abs(n.x||0),Math.abs(n.y||0))>.5;
-  if(horizontal&&connectionEligible(s)){
+  if(isSpatialForm(id)&&s&&grid(s.x)&&grid(s.y)&&s.w===1&&s.d===1&&s.height===1&&Number.isFinite(s.baseZ)){
+   // On a thin stem, the physical surface is inside the cell. Use the
+   // support's logical face instead, including caps at intermediate height.
+   const nz=Math.abs(n.z||0),nx=Math.abs(n.x||0),ny=Math.abs(n.y||0);
+   out.x=Math.round(s.x);out.y=Math.round(s.y);out.z=round(s.baseZ+(s.offsetZ||0));
+   if(nz>=Math.max(nx,ny)&&nz>EPS)out.z=round(out.z+Math.sign(n.z));
+   else if(nx>=ny&&nx>EPS)out.x+=Math.sign(n.x);
+   else if(ny>EPS)out.y+=Math.sign(n.y);
+  }else if(horizontal&&connectionEligible(s)){
    out.x=Math.round(s.x)+(Math.abs(n.x)>Math.abs(n.y)?Math.sign(n.x):0);
    out.y=Math.round(s.y)+(Math.abs(n.y)>=Math.abs(n.x)?Math.sign(n.y):0);
    out.z=s.baseZ;
@@ -117,7 +182,7 @@ export function orientForm(item,p){
  }
  return out;
 }
-function localParts(o){if(connectionEligible(o)&&Number.isInteger(o.formConnections))return connectedCatalog.get(o.blockForm)[o.formConnections&15];return catalog.get(hasBlockForm(o)?o.blockForm:'box')||catalog.get('box')}
+function localParts(o){if(connectionEligible(o)&&Number.isInteger(o.formConnections)){if(isSpatialForm(o.blockForm))return spatialVariant(o.blockForm,o.formConnections&63,(o.formConnectionSizes||0)&262143);return connectedCatalog.get(o.blockForm)[o.formConnections&15]}return catalog.get(hasBlockForm(o)?o.blockForm:'box')||catalog.get('box')}
 function transformed(o,p,z=0){const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),cx=o.x+w/2,cy=o.y+d/2;return p.vertices.map(([x,y,v])=>{const u=(o.formMirror?.5-x:x-.5)*w,t=(y-.5)*d;return [cx+u*c-t*s,cy+u*s+t*c,z+(o.formFlip?1-v:v)*h]})}
 function worldPolys(o,z=o.baseZ||0){return localParts(o).map(p=>poly(transformed(o,p,z),p.faces))}
 function toLocal(o,x,y,z=0){const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),dx=x-(o.x+w/2),dy=y-(o.y+d/2);return [(dx*c+dy*s)/w+.5,(-dx*s+dy*c)/d+.5,(z-(o.baseZ||0))/h]}
@@ -129,7 +194,7 @@ export function shapeIntervals(o,x,y,base=o.baseZ||0){let [u,v]=toLocal(o,x,y);i
 function convexOverlap(a,b){const axes=[...a.planes.map(p=>p.n),...b.planes.map(p=>p.n)];const ea=a.edges.map(([i,j])=>sub(a.vertices[j],a.vertices[i])),eb=b.edges.map(([i,j])=>sub(b.vertices[j],b.vertices[i]));for(const v of ea)for(const w of eb){const n=unit(cross(v,w));if(n)axes.push(n)}for(const n of axes){const aa=a.vertices.map(v=>dot(n,v)),bb=b.vertices.map(v=>dot(n,v));if(Math.max(...aa)<=Math.min(...bb)+1e-5||Math.max(...bb)<=Math.min(...aa)+1e-5)return false}return true}
 export function formsOverlap(a,b,za=a.baseZ||0,zb=b.baseZ||0){return worldPolys(a,za).some(p=>worldPolys(b,zb).some(q=>convexOverlap(p,q)))}
 // Conservative box proxies for camera movement; exact rectangular pieces.
-function proxyBoxes(p){if(p.box)return[p.box];const count=6,boxes=[];
+function proxyBoxes(p){if(p.cameraBoxes)return p.cameraBoxes;if(p.box)return[p.box];const count=6,boxes=[];
  for(let i=0;i<count;i++)for(let j=0;j<count;j++){const x0=i/count,x1=(i+1)/count,y0=j/count,y1=(j+1)/count,zs=[];
   const visit=(x,y)=>{const t=localIntervals(p,x,y);if(t)zs.push(...t)};
   for(const x of [x0,x1])for(const y of [y0,y1])visit(x,y);
@@ -141,9 +206,9 @@ function proxyBoxes(p){if(p.box)return[p.box];const count=6,boxes=[];
  return boxes;
 }
 const proxies=new Map([...catalog].map(([k,p])=>[k,p.flatMap(proxyBoxes)]));
-export function formCollisionBoxes(o,base=o.baseZ||0){if(!hasBlockForm(o))return[o];const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),cx=o.x+w/2,cy=o.y+d/2;return (connectionEligible(o)&&Number.isInteger(o.formConnections)?localParts(o).map(p=>p.box):proxies.get(o.blockForm)).map(([x0,y0,z0,x1,y1,z1])=>{let u=(o.formMirror?.5-(x0+x1)/2:(x0+x1)/2-.5)*w,v=((y0+y1)/2-.5)*d,ww=(x1-x0)*w,dd=(y1-y0)*d;return {...o,blockForm:undefined,formFlip:undefined,formMirror:undefined,formConnections:undefined,x:cx+u*c-v*s-ww/2,y:cy+u*s+v*c-dd/2,w:ww,d:dd,baseZ:base+(o.formFlip?1-z1:z0)*h,offsetZ:0,height:(z1-z0)*h}})}
+export function formCollisionBoxes(o,base=o.baseZ||0){if(!hasBlockForm(o))return[o];const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),cx=o.x+w/2,cy=o.y+d/2;return (connectionEligible(o)&&Number.isInteger(o.formConnections)?localParts(o).flatMap(proxyBoxes):proxies.get(o.blockForm)).map(([x0,y0,z0,x1,y1,z1])=>{let u=(o.formMirror?.5-(x0+x1)/2:(x0+x1)/2-.5)*w,v=((y0+y1)/2-.5)*d,ww=(x1-x0)*w,dd=(y1-y0)*d;return {...o,blockForm:undefined,formFlip:undefined,formMirror:undefined,formConnections:undefined,formConnectionSizes:undefined,x:cx+u*c-v*s-ww/2,y:cy+u*s+v*c-dd/2,w:ww,d:dd,baseZ:base+(o.formFlip?1-z1:z0)*h,offsetZ:0,height:(z1-z0)*h}})}
 export function formGeometry(T,o){const groups=[[],[],[],[],[],[]],w=o.w||1,d=o.d||1,h=o.height||1;
- for(const p of localParts(o)){const vs=p.vertices.map(([x,y,z])=>[(o.formMirror?.5-x:x-.5)*w,(o.formFlip?1-z:z)*h,(y-.5)*d]);const center=mean(vs);for(const raw of p.faces){let f=[...raw],n=null;for(let i=1;i<f.length-1&&!n;i++)n=unit(cross(sub(vs[f[i]],vs[f[0]]),sub(vs[f[i+1]],vs[f[0]])));if(!n)continue;if(dot(n,sub(center,vs[f[0]]))>0){n=n.map(v=>-v);f.reverse()}const mi=n[1]>.25?2:n[1]<-.25?3:0;for(let i=1;i<f.length-1;i++){const tri=[vs[f[0]],vs[f[i]],vs[f[i+1]]];if(norm(cross(sub(tri[1],tri[0]),sub(tri[2],tri[0])))<EPS)continue;for(const v of tri)groups[mi].push({v,n,uv:Math.abs(n[1])>.5?[v[0]+w/2,v[2]+d/2]:Math.abs(n[0])>Math.abs(n[2])?[v[2]+d/2,v[1]]:[v[0]+w/2,v[1]]})}}}
+ for(const p of localParts(o)){const vs=p.vertices.map(([x,y,z])=>[(o.formMirror?.5-x:x-.5)*w,(o.formFlip?1-z:z)*h,(y-.5)*d]);const center=mean(vs);for(const raw of p.faces){if(p.omitCaps?.some(([axis,at])=>raw.every(i=>Math.abs(p.vertices[i][axis]-at)<EPS)))continue;let f=[...raw],n=null;for(let i=1;i<f.length-1&&!n;i++)n=unit(cross(sub(vs[f[i]],vs[f[0]]),sub(vs[f[i+1]],vs[f[0]])));if(!n)continue;if(dot(n,sub(center,vs[f[0]]))>0){n=n.map(v=>-v);f.reverse()}const mi=n[1]>.25?2:n[1]<-.25?3:0;for(let i=1;i<f.length-1;i++){const tri=[vs[f[0]],vs[f[i]],vs[f[i+1]]];if(norm(cross(sub(tri[1],tri[0]),sub(tri[2],tri[0])))<EPS)continue;for(const v of tri)groups[mi].push({v,n,uv:Math.abs(n[1])>.5?[v[0]+w/2,v[2]+d/2]:Math.abs(n[0])>Math.abs(n[2])?[v[2]+d/2,v[1]]:[v[0]+w/2,v[1]]})}}}
  const positions=[],normals=[],uvs=[],g=new T.BufferGeometry();for(let i=0;i<groups.length;i++){const start=positions.length/3;for(const {v,n,uv}of groups[i]){positions.push(...v);normals.push(...n);uvs.push(...uv)}if(groups[i].length)g.addGroup(start,groups[i].length,i)}g.setAttribute('position',new T.Float32BufferAttribute(positions,3));g.setAttribute('normal',new T.Float32BufferAttribute(normals,3));g.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));g.computeBoundingBox();g.computeBoundingSphere();return g;
 }
 export function shapeGridBlocked(o,x,y,z,height,radius,base=o.baseZ||0){
@@ -155,4 +220,4 @@ export function shapeGridBlocked(o,x,y,z,height,radius,base=o.baseZ||0){
 }
 export function shapeGridStepBlocked(o,a,b,z,height,radius,base=o.baseZ||0){const n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)*8));for(let i=0;i<=n;i++){const t=i/n;if(shapeGridBlocked(o,a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,z,height,radius,base))return true}return false}
 const iconCache=new Map();
-export function formIconPolygons(id){if(iconCache.has(id))return iconCache.get(id);const parts=isConnectedForm(id)?connectedCatalog.get(id)[5]:catalog.get(id)||catalog.get('corner-wall'),camera=[1,-1,1],out=[];for(const p of parts)for(let i=0;i<p.faces.length;i++){const n=p.planes[i].n;if(dot(n,camera)<=EPS)continue;const vs=p.faces[i].map(j=>p.vertices[j]);out.push({depth:dot(mean(vs),camera),points:vs.map(([x,y,z])=>[8+24*(x+y),40+12*(x-y)-29*z].map(round).join(',')).join(' '),shade:n[2]>.25?1:n[0]>.25?.72:.86,top:n[2]>.25})}out.sort((a,b)=>a.depth-b.depth);iconCache.set(id,out);return out}
+export function formIconPolygons(id){if(iconCache.has(id))return iconCache.get(id);const parts=isSpatialForm(id)?spatialVariant(id,id==='branch-connected'?49:id==='spike-connected'?32:48,0):isConnectedForm(id)?connectedCatalog.get(id)[5]:catalog.get(id)||catalog.get('corner-wall'),camera=[1,-1,1],out=[];for(const p of parts)for(let i=0;i<p.faces.length;i++){const n=p.planes[i].n;if(dot(n,camera)<=EPS)continue;const vs=p.faces[i].map(j=>p.vertices[j]);out.push({depth:dot(mean(vs),camera),points:vs.map(([x,y,z])=>[8+24*(x+y),40+12*(x-y)-29*z].map(round).join(',')).join(' '),shade:n[2]>.25?1:n[0]>.25?.72:.86,top:n[2]>.25})}out.sort((a,b)=>a.depth-b.depth);iconCache.set(id,out);return out}
