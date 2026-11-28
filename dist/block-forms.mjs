@@ -58,7 +58,8 @@ function jointHub(radius){
 // under quarter-turns and reversal). The convex frustum is also a collider.
 function obliqueTube(start,end,r0,r1,omitStart=false,omitEnd=false){
  const n=12,axis=unit(sub(end,start)),length=norm(sub(end,start));
- const u=axis[2]!==0?unit(cross([0,0,1],axis)): [0,0,1],v=cross(axis,u);
+ // The world-up cross product vanishes on vertical (or almost vertical) tubes.
+ const u=axis[2]!==0?(unit(cross([0,0,1],axis))||unit(cross([0,1,0],axis))):[0,0,1],v=cross(axis,u);
  const ring=(p,r)=>Array.from({length:n},(_,i)=>{const a=i*2*Math.PI/n;return p.map((x,k)=>x+r*(u[k]*Math.cos(a)+v[k]*Math.sin(a)))});
  const p=poly([...ring(start,r0),...ring(end,r1)],[Array.from({length:n},(_,i)=>i),Array.from({length:n},(_,i)=>n+i),...Array.from({length:n},(_,i)=>[i,(i+1)%n,(i+1)%n+n,i+n])]);
  p.oblique={axis,u,v,length,n,r0,r1,start,end,omitStart,omitEnd};p.cameraBoxes=[];

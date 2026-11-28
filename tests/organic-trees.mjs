@@ -4,6 +4,14 @@ import {TREE_PROFILES,generateLeaflessTree} from '../dist/organic-trees.mjs';
 import {ensureTreeExamples,schemaPlacement} from '../dist/construction.mjs';
 import {formGeometry,formCollisionBoxes} from '../dist/block-forms.mjs';
 import {rebuildConnections,updateConnections} from '../dist/connected-blocks.mjs';
+// Explicit regression: the organic root and both vertical directions
+// must build finite geometry, including an almost vertical center offset.
+for(const offset of [[0,0,0],[1e-10,0,0],[0,-1e-10,0]])for(const direction of [-1,1]){
+ const block={type:'block',blockForm:'trunk-connected',x:0,y:0,baseZ:0,w:1,d:1,height:1,facing:0,formRadius:.32,formOffset:offset,formRoot:true,formOrganicLinks:[[0,0,direction,.25,0,0,0]]};
+ const g=formGeometry(T,block);
+ for(const name of ['position','normal','uv']){assert(g.attributes[name].count>0);assert([...g.attributes[name].array].every(Number.isFinite),'vertical tube: '+name)}
+ assert(formCollisionBoxes(block).every(b=>[b.x,b.y,b.baseZ,b.w,b.d,b.height].every(Number.isFinite)));g.dispose();
+}
 const world={schematics:[]};ensureTreeExamples(world);
 for(const p of TREE_PROFILES){
  const nodes=generateLeaflessTree(p);assert.deepEqual(nodes,generateLeaflessTree(p));assert(nodes.length<=96);assert(nodes.length>1);assert.equal(new Set(nodes.map(n=>n.pos.join(','))).size,nodes.length);
