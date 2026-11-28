@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {parseHTML} from 'linkedom';
-import {HUD_CATEGORIES,hitTest,hudLayout,inventoryLayout} from '../dist/canvas-hud.mjs';
+import {HUD_CATEGORIES,HUD_FAMILIES,inventoryFamilyFor,hitTest,hudLayout,inventoryLayout} from '../dist/canvas-hud.mjs';
 import {searchCommands,normalizeSearch,organizeSceneSettings,syncDockState,createBookmarkStore,cameraSnapshot,applyGraphicsProfile} from '../dist/workspace-ui.mjs';
 const html=fs.readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
 const {document}=parseHTML(html);
 const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);assert.equal(new Set(ids).size,ids.length);
 for(const id of ['map','viewport','playMode','buildMode','sceneMapSelect','mapName','creativeForms','creativeSettings','zoneTools','inspector','lightPanel','commandDialog','commandSearch','commandResults','bookmarksPanel','performanceHud'])assert(document.getElementById(id),id);
 for(const id of ['hotbar','creativeInventory','inventoryItems','inventoryTabs','creativeHud','selectionBar','contextMenu'])assert.equal(document.getElementById(id),null,'no legacy DOM menu: '+id);
-assert.equal(HUD_CATEGORIES.length,11);
+assert.equal(HUD_FAMILIES.length,5);assert.equal(new Set(HUD_CATEGORIES.map(x=>x[0])).size,HUD_CATEGORIES.length);assert.equal(inventoryFamilyFor('trees')[0],'nature');assert.equal(inventoryFamilyFor('settings')[0],'workshop');
 for(const [w,h] of [[1280,900],[600,500],[320,420]]){
- const l=hudLayout(w,h);assert(l.panel.x>=0&&l.panel.x+l.panel.w<=w);assert(l.barX>=0&&l.barX+l.barW<=w);assert(l.barY+l.slot<=h);const g=inventoryLayout(l.panel);assert.equal(g.tabs.length,11);for(const t of g.tabs){assert(t.x>=l.panel.x&&t.x+t.w<=l.panel.x+l.panel.w+.001);assert(t.y+t.h<=g.top)}assert(g.cw>0&&g.ch>=85);
+ const l=hudLayout(w,h);assert(l.panel.x>=0&&l.panel.x+l.panel.w<=w);assert(l.barX>=0&&l.barX+l.barW<=w);assert(l.barY+l.slot<=h);const g=inventoryLayout(l.panel);assert.equal(g.tabs.length,5);for(const t of [...g.tabs,...g.subtabs]){assert(t.x>=l.panel.x&&t.x+t.w<=l.panel.x+l.panel.w+.001);assert(t.y+t.h<=g.top)}assert(g.cw>0&&g.ch>=85);
 }
 const regions=[{id:'panel',x:0,y:0,w:100,h:100},{id:'item',x:10,y:10,w:30,h:30}];
 assert.equal(hitTest(regions,20,20).id,'item');assert.equal(hitTest(regions,40,20).id,'panel');assert.equal(hitTest(regions,101,20),null);

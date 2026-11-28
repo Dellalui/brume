@@ -5,7 +5,15 @@ import {BODY_PARTS,bodyCondition,conditionColor} from './body-condition.mjs';
 import {ARCANE,CATEGORY_SIGILS,arcanePanel,arcaneTile,plate,separator,sigil,texturedCube} from './arcane-theme.mjs';
 // Canvas-native menus. Layout, rendering, hit testing and drag/drop share one
 // coordinate system; no DOM item buttons, invisible hit targets or grid nodes.
-export const HUD_CATEGORIES=[['blocks','Blocs'],['doors','Portes'],['decor','Décors'],['actors','Personnages'],['effects','Effets'],['throws','À lancer'],['schemas','Schémas'],['trees','Arbres'],['tools','Outils'],['zone','Zone'],['settings','Réglages']];
+export const HUD_FAMILIES=[
+ ['construction','Construction',[['blocks','Blocs'],['doors','Portes'],['schemas','Schémas']]],
+ ['nature','Nature',[['trees','Arbres'],['natural-decor','Décors naturels']]],
+ ['decor','Décors',[['decor','Tous'],['decor-architecture','Architecture'],['decor-furniture','Mobilier'],['decor-camp','Campement'],['decor-utilities','Utilitaires']]],
+ ['game','Jeu',[['actors','Personnages'],['effects','Effets'],['throws','À lancer']]],
+ ['workshop','Atelier',[['tools','Outils'],['zone','Zone'],['settings','Réglages']]]
+];
+export const HUD_CATEGORIES=HUD_FAMILIES.flatMap(f=>f[2]);
+export const inventoryFamilyFor=category=>HUD_FAMILIES.find(f=>f[2].some(([id])=>id===category))||HUD_FAMILIES[0];
 export const contains=(r,x,y)=>x>=r.x&&y>=r.y&&x<r.x+r.w&&y<r.y+r.h;
 export function hitTest(regions,x,y){for(let i=regions.length-1;i>=0;i--)if(contains(regions[i],x,y))return regions[i];return null}
 export function hudLayout(w,h){
@@ -29,16 +37,18 @@ export function playerBodyLayout(w,h,expanded=null){
  return{x:10,y:wide?Math.max(8,h-height-91):10,w:width,h:height,open,wide};
 }
 export function inventoryLayout(p,category='blocks'){
- const pad=p.w>=560?22:12,gap=8,cols=p.w>=1000?10:p.w>=310?5:3;
- const rows=Math.ceil(HUD_CATEGORIES.length/cols),tw=(p.w-2*pad-(cols-1)*gap)/cols,th=p.w>=550?37:31,step=th+gap;
- const tabs=HUD_CATEGORIES.map((_,i)=>({x:p.x+pad+(i%cols)*(tw+gap),y:p.y+70+Math.floor(i/cols)*step,w:tw,h:th}));
- const top=p.y+70+rows*step+8,footerY=p.y+p.h-50,extra=category==='schemas'?34:0;
+ const pad=p.w>=560?22:12,gap=6,cols=p.w>=550?5:3;
+ const rows=Math.ceil(HUD_FAMILIES.length/cols),tw=(p.w-2*pad-(cols-1)*gap)/cols,th=p.w>=550?38:29,step=th+gap;
+ const tabs=HUD_FAMILIES.map((_,i)=>({x:p.x+pad+(i%cols)*(tw+gap),y:p.y+70+Math.floor(i/cols)*step,w:tw,h:th}));
+ const familyTabs=inventoryFamilyFor(category)[2],subCols=Math.min(familyTabs.length,p.w>=550?5:3),subRows=Math.ceil(familyTabs.length/subCols),subW=(p.w-2*pad-(subCols-1)*gap)/subCols,subH=p.w>=550?31:26,subY=p.y+70+rows*step+3;
+ const subtabs=familyTabs.map((_,i)=>({x:p.x+pad+(i%subCols)*(subW+gap),y:subY+Math.floor(i/subCols)*(subH+gap),w:subW,h:subH}));
+ const top=subY+subRows*(subH+gap)+5,footerY=p.y+p.h-50,extra=category==='schemas'?34:0;
  const fw=category==='blocks'?Math.min(180,p.w*.30):0,search={x:p.x+pad,y:top,w:Math.max(1,p.w-2*pad-(fw?fw+gap:0)),h:36};
  const family={x:search.x+search.w+gap,y:top,w:fw,h:36};
  const grid={x:p.x+pad,y:top+48,w:p.w-2*pad,h:Math.max(0,footerY-top-60-extra)};
  const tileGap=10,n=Math.max(1,Math.floor((grid.w+tileGap-9)/(p.w>=550?128:91))),cw=(grid.w-9-(n-1)*tileGap)/n,ch=p.w>=550?94:85;
  const forms={x:p.x+pad,y:top+36,w:p.w-2*pad,h:Math.max(0,p.y+p.h-top-50)};
- return{pad,tabs,top,footerY,extra,search,family,grid,n,cw,ch,tileGap,forms}
+ return{pad,tabs,subtabs,top,footerY,extra,search,family,grid,n,cw,ch,tileGap,forms}
 }
 export function drawFormIcon(ctx,x,y,size,d,shape,imageFor){
  const faces=formIconPolygons(shape),def=d.material||{};
@@ -194,7 +204,8 @@ export function mountCanvasHUD(doc,api){
  function drawInventory(s,l){const p=l.panel;if(p.h<70)return;panel(p);region(p,'inventory-panel',()=>{searching=false;familyOpen=false});
   text('◇  ATELIER DU MAÎTRE DU JEU  ◇',p.x+p.w/2,p.y+18,p.w-90,11,colors.gold,'center',700);text('Inventaire de construction',p.x+p.w/2,p.y+42,p.w-90,p.w<450?19:26,colors.fg,'center',650);separator(ctx,p.x+22,p.y+61,p.w-44);
   button({x:p.x+p.w-43,y:p.y+9,w:32,h:34},'close','×',api.close);
-  const g=inventoryLayout(p,s.category);HUD_CATEGORIES.forEach(([id,label],i)=>button(g.tabs[i],'category-'+id,label,()=>{searching=false;familyOpen=false;api.category(id)},id===s.category));
+  const g=inventoryLayout(p,s.category);const active=inventoryFamilyFor(s.category);HUD_FAMILIES.forEach(([id,label,children],i)=>button(g.tabs[i],'category-'+id,label,()=>{searching=false;familyOpen=false;if(id!==active[0])api.category(children[0][0])},id===active[0]));
+  active[2].forEach(([id,label],i)=>button(g.subtabs[i],'subcategory-'+id,label,()=>{searching=false;familyOpen=false;api.category(id)},id===s.category));
   const top=g.top,advanced=['settings','zone','trees'].includes(s.category);
   if(advanced){text(s.category==='trees'?'Générateur de végétation':s.category==='zone'?'⌗  Sélection de zone':'✧  Forge arcanique · Réglages',p.x+p.w/2,top+14,p.w-28,16,colors.gold,'center',650);return}
   const sr=g.search,fw=g.family.w;box(sr,'#0a1919',searching?colors.gold:colors.edge);
@@ -202,7 +213,7 @@ export function mountCanvasHUD(doc,api){
   const fr=g.family;if(fw)button(fr,'family',(s.families[s.family]||'Toutes les familles')+' ▾',()=>{familyOpen=!familyOpen;searching=false});
   const {footerY,extra}=g;grid=g.grid;
   if(grid.h>0){const {n,cw,ch,tileGap:gap}=g;maxScroll=Math.max(0,Math.ceil(s.items.length/n)*(ch+gap)-gap-grid.h);scroll=Math.max(0,Math.min(maxScroll,scroll));ctx.save();ctx.beginPath();ctx.rect(grid.x,grid.y,grid.w,grid.h);ctx.clip();s.items.forEach((d,i)=>{const r={x:grid.x+(i%n)*(cw+gap),y:grid.y+Math.floor(i/n)*(ch+gap)-scroll,w:cw,h:ch};if(r.y+r.h>grid.y&&r.y<grid.y+grid.h)item(r,'item-'+i,d,()=>api.equip(d.item),JSON.stringify(d.item)===JSON.stringify(s.slots[s.active]?.item),null,grid)});if(!s.items.length)text('Aucun élément correspondant',grid.x+8,grid.y+18,grid.w-16,12,colors.muted);ctx.restore();if(maxScroll>0){const th=Math.max(18,grid.h*grid.h/(grid.h+maxScroll));box({x:grid.x+grid.w-3,y:grid.y+(grid.h-th)*scroll/maxScroll,w:3,h:th},colors.gold,null,2)}}
-  if(extra){const bw=Math.min(230,(p.w-32)/2);button({x:p.x+12,y:footerY-29,w:bw,h:26},'schema-zone','Sélectionner une zone',api.zone);button({x:p.x+20+bw,y:footerY-29,w:bw,h:26},'schema-trees','Générer un arbre',()=>api.category('trees'));}
+  if(extra)button({x:p.x+12,y:footerY-29,w:Math.min(230,p.w-24),h:26},'schema-zone','Sélectionner une zone',api.zone);
   separator(ctx,p.x+g.pad,footerY,p.w-2*g.pad);const focused=regions.findLast(r=>r.inventory&&contains(r,cursor.x,cursor.y));const detail=focused?s.items[Number(focused.id.slice(5))]:null;text(detail?detail.name+(detail.hardness!=null?' · Dureté '+String(detail.hardness).replace('.',','):''):s.items.length+' éléments · créneau '+(s.active+1),p.x+g.pad,footerY+24,p.w-170,12,colors.gold);button({x:p.x+p.w-147,y:footerY+9,w:125,h:32},'advanced','Réglages · R',api.settings);
   if(familyOpen&&fw){const opts=[['all','Toutes les familles'],...Object.entries(s.families)],r={x:fr.x,y:fr.y+fr.h+3,w:fw,h:opts.length*27+8};panel(r);region(r,'family-panel',()=>{});opts.forEach(([id,label],i)=>button({x:r.x+4,y:r.y+4+i*27,w:r.w-8,h:25},'family-'+id,label,()=>{familyOpen=false;api.family(id)},id===s.family))}
  }

@@ -1,4 +1,5 @@
 import * as W from './world.mjs';
+import {treeConstructionBoxes} from './tree-construction-collision.mjs';
 import {TREE_PROFILES,generateLeaflessTree,treeForm,normalizeTreeConfig} from './organic-trees.mjs';
 import {packTreeGraph,validTreeGraph,treeExtent,isUnifiedTree} from './unified-trees.mjs';
 import {ensureTreeTypes,treeVariant,plantSequence,treeTypeConfig} from './tree-types.mjs';
@@ -98,6 +99,11 @@ export function placement(item,point,world,id=()=>crypto.randomUUID()){
 }
 function vertical(o,map){const z=W.elevation(o,map);return[z,z+(o.height||1)]}
 export function overlap(a,b,map){
+ // Tree volumes are small, cached construction proxies, not scene objects.
+ if(a.type==='tree'||b.type==='tree'){
+  const aa=a.type==='tree'?treeConstructionBoxes(a,W.elevation(a,map)):[a],bb=b.type==='tree'?treeConstructionBoxes(b,W.elevation(b,map)):[b];
+  return aa.some(x=>bb.some(y=>overlap(x,y,map)));
+ }
  const [a0,a1]=vertical(a,map),[b0,b1]=vertical(b,map);if(a1<=b0+.001||b1<=a0+.001)return false;
  const pa=W.footprint(a),pb=W.footprint(b);
  for(const polygon of [pa,pb])for(let i=0;i<4;i++){
@@ -111,8 +117,8 @@ export function placementError(map,objects){
  for(const o of objects){
   const z=W.elevation(o,map);if(!Number.isFinite(z)||z< -16||z+(o.height||1)>32)return'Altitude autorisée : de −16 à +32.';
   const error=W.placementError(map,o);if(error)return error;
-  if(o.type!=='block'&&o.type!=='build_door')continue;
-  for(const other of map.objects)if((other.type==='block'||other.type==='build_door')&&other.id!==o.id&&overlap(o,other,map))return'Ce volume est déjà occupé.';
+  if(!['block','build_door','tree'].includes(o.type))continue;
+  for(const other of map.objects)if(['block','build_door','tree'].includes(other.type)&&other.id!==o.id&&overlap(o,other,map))return other.type==='tree'||o.type==='tree'?'Un arbre occupe ce volume.':'Ce volume est déjà occupé.';
   const b=W.bounds(o);for(let x=Math.max(0,Math.floor(b.x));x<Math.min(map.width,Math.ceil(b.x+b.w));x++)for(let y=Math.max(0,Math.floor(b.y));y<Math.min(map.height,Math.ceil(b.y+b.h));y++)for(const [base,material] of Object.entries(map.blocks?.[W.cellKey(x,y)]||{})){
    const voxel=blockObject(material,x,y,+base,1,1,W.blockSize(map,x,y,+base),0,'voxel');if(overlap(o,voxel,map))return'Un bloc occupe ce volume.';
   }
