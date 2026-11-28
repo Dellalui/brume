@@ -14,7 +14,7 @@ export function mountTreeGenerator(root,{materials,onSave}){
   ctx.clearRect(0,0,w,h);ctx.fillStyle='#12211d';ctx.fillRect(0,0,w,h);ctx.lineCap='round';
   const color=materials[c.material]?.side||materials[c.material]?.top||'#92724d';
   for(const n of nodes){const a=p(n);for(const child of n.children){const b=p(child);ctx.strokeStyle=color;ctx.lineWidth=Math.max(1,(n.radius+child.radius)*s);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke()}ctx.fillStyle=color;ctx.beginPath();ctx.arc(...a,Math.max(.6,n.radius*s),0,Math.PI*2);ctx.fill();if(n.root){ctx.strokeStyle=color;ctx.lineWidth=n.radius*2*s;ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(a[0],a[1]+s*.5);ctx.stroke()}}
-  status.textContent=nodes.length+' blocs · graine '+c.seed+' · aperçu simplifié sans feuilles';
+  status.textContent='1 objet · '+nodes.length+' points de croissance · graine '+c.seed+' · aperçu simplifié sans feuilles';
  }
  function load(){const p=TREE_GENERATOR_PROFILES.find(p=>p.key===select.value)||TREE_GENERATOR_PROFILES[0],c=normalizeTreeConfig(p);material.value=c.material;for(const k of fields)field(k).value=c[k];draw()}
  select.addEventListener('change',load);material.addEventListener('change',draw);for(const k of fields)field(k).addEventListener('input',draw);

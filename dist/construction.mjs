@@ -1,5 +1,6 @@
 import * as W from './world.mjs';
 import {TREE_PROFILES,generateLeaflessTree,treeForm,normalizeTreeConfig} from './organic-trees.mjs';
+import {packTreeGraph,validTreeGraph,treeExtent,isUnifiedTree} from './unified-trees.mjs';
 import {previewConnectionData,rebuildConnections} from './connected-blocks.mjs';
 import {formAllowed,isForm,orientForm,formInfo,hasBlockForm,formsOverlap,connectionEligible,isConnectedForm,isSpatialForm} from './block-forms.mjs';
 import * as V from './blocks.mjs';
@@ -18,7 +19,7 @@ export function defaultSlots(){return[
  {kind:'object',type:'light',yaw:0,step:1},
  {kind:'selection',name:'Sélection de zone'}
 ]}
-export function createTreeSchema(input,id){
+export function createBlockTreeSchema(input,id){
  const config=normalizeTreeConfig(input);
  if(!W.BLOCKS[config.material]||['water','lava','air'].includes(config.material))throw Error('Choisissez un matériau de construction solide.');
  const nodes=generateLeaflessTree(config),minX=Math.min(...nodes.map(n=>n.pos[0])),minY=Math.min(...nodes.map(n=>n.pos[1]));
@@ -26,14 +27,21 @@ export function createTreeSchema(input,id){
  rebuildConnections({objects,groups:[]});
  return {id,name:config.name,w:Math.max(...objects.map(o=>o.x))+1,d:Math.max(...objects.map(o=>o.y))+1,h:Math.max(...objects.map(o=>o.baseZ))+1,objects,treeConfig:config,createdAt:Date.now()};
 }
+export function createTreeSchema(input,id){
+ const config=normalizeTreeConfig(input);
+ if(!W.BLOCKS[config.material]||W.BLOCKS[config.material].solid===false||['water','lava','air'].includes(config.material))throw Error('Choisissez un matériau solide.');
+ const treeGraph=packTreeGraph(generateLeaflessTree(config)),extent=treeExtent(treeGraph);
+ const o={...W.newObject('tree',0,0,id+'-tree'),...extent,name:config.name,material:config.material,treeGraph,treeConfig:config,canopy:0,group:null,baseZ:0,blocking:true,blocksSight:!!W.BLOCKS[config.material].opaque};
+ return {id,name:config.name,w:o.w,d:o.d,h:o.height,objects:[o],treeConfig:config,createdAt:Date.now()};
+}
 export function ensureTreeExamples(world){
- world.schematics??=[];if(world.builtinTreeSchemasRevision>=3)return;
+ world.schematics??=[];if(world.builtinTreeSchemasRevision>=4)return;
  world.schematics=world.schematics.filter(s=>!(s.builtin&&s.id.startsWith('builtin-tree-')));const ids=new Set(world.schematics.map(s=>s.id));
  for(const profile of TREE_PROFILES){
   const id='builtin-tree-'+profile.key;if(ids.has(id))continue;
   world.schematics.push({...createTreeSchema(profile,id),createdAt:0,builtin:true});
  }
- world.builtinTreeSchemasRevision=3;
+ world.builtinTreeSchemasRevision=4;
 }
 export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];ensureTreeExamples(world);return world.builder}
 export function itemName(item,world){if(!item)return'Vide';if(formAllowed(item)&&isForm(item.shape))return (W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(item.shape).name;if(item.kind==='block')return liquidPresetName(item.material,item.liquidStyle)||(item.liquidStyle?((W.BLOCKS[item.material]?.name||'Bloc')+' personnalisée'):(W.BLOCKS[item.material]?.name||'Bloc'));if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import * as T from '../dist/vendor/three.module.min.js';
 import {TREE_PROFILES,generateLeaflessTree} from '../dist/organic-trees.mjs';
-import {ensureTreeExamples,schemaPlacement} from '../dist/construction.mjs';
+import {createBlockTreeSchema,schemaPlacement} from '../dist/construction.mjs';
 import {formGeometry,formCollisionBoxes} from '../dist/block-forms.mjs';
 import {rebuildConnections,updateConnections} from '../dist/connected-blocks.mjs';
 // Explicit regression: the organic root and both vertical directions
@@ -12,7 +12,7 @@ for(const offset of [[0,0,0],[1e-10,0,0],[0,-1e-10,0]])for(const direction of [-
  for(const name of ['position','normal','uv']){assert(g.attributes[name].count>0);assert([...g.attributes[name].array].every(Number.isFinite),'vertical tube: '+name)}
  assert(formCollisionBoxes(block).every(b=>[b.x,b.y,b.baseZ,b.w,b.d,b.height].every(Number.isFinite)));g.dispose();
 }
-const world={schematics:[]};ensureTreeExamples(world);
+const world={schematics:TREE_PROFILES.map(p=>createBlockTreeSchema(p,p.key))};
 for(const p of TREE_PROFILES){
  const nodes=generateLeaflessTree(p);assert.deepEqual(nodes,generateLeaflessTree(p));assert(nodes.length<=96);assert(nodes.length>1);assert.equal(new Set(nodes.map(n=>n.pos.join(','))).size,nodes.length);
  assert(nodes.every(n=>n.radius>=.013&&n.radius<=.46));

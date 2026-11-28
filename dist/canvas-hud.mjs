@@ -5,7 +5,7 @@ import {BODY_PARTS,bodyCondition,conditionColor} from './body-condition.mjs';
 import {ARCANE,CATEGORY_SIGILS,arcanePanel,arcaneTile,plate,separator,sigil,texturedCube} from './arcane-theme.mjs';
 // Canvas-native menus. Layout, rendering, hit testing and drag/drop share one
 // coordinate system; no DOM item buttons, invisible hit targets or grid nodes.
-export const HUD_CATEGORIES=[['blocks','Blocs'],['doors','Portes'],['decor','Décors'],['actors','Personnages'],['effects','Effets'],['throws','À lancer'],['schemas','Schémas'],['tools','Outils'],['zone','Zone'],['settings','Réglages']];
+export const HUD_CATEGORIES=[['blocks','Blocs'],['doors','Portes'],['decor','Décors'],['actors','Personnages'],['effects','Effets'],['throws','À lancer'],['schemas','Schémas'],['trees','Arbres'],['tools','Outils'],['zone','Zone'],['settings','Réglages']];
 export const contains=(r,x,y)=>x>=r.x&&y>=r.y&&x<r.x+r.w&&y<r.y+r.h;
 export function hitTest(regions,x,y){for(let i=regions.length-1;i>=0;i--)if(contains(regions[i],x,y))return regions[i];return null}
 export function hudLayout(w,h){

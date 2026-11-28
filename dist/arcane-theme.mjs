@@ -1,7 +1,7 @@
 // Brume's original arcane design system. All ornaments and material previews
 // are procedural Canvas2D artwork; no extra WebGL context or external assets.
 export const ARCANE=Object.freeze({bg:'#0b1818',card:'#142724',edge:'#776448',gold:'#e8c47d',fg:'#f1e5cd',muted:'#a8bcb0',hover:'#29433c'});
-export const CATEGORY_SIGILS={blocks:'◇',doors:'♜',decor:'♧',actors:'♙',effects:'✧',throws:'ϟ',schemas:'▧',tools:'⚒',zone:'⌗',settings:'⚙'};
+export const CATEGORY_SIGILS={blocks:'◇',doors:'♜',decor:'♧',actors:'♙',effects:'✧',throws:'ϟ',schemas:'▧',trees:'♧',tools:'⚒',zone:'⌗',settings:'⚙'};
 export function chamfer(ctx,r,c=6){const {x,y,w,h}=r,k=Math.max(0,Math.min(c,w/2,h/2));ctx.beginPath();ctx.moveTo(x+k,y);ctx.lineTo(x+w-k,y);ctx.lineTo(x+w,y+k);ctx.lineTo(x+w,y+h-k);ctx.lineTo(x+w-k,y+h);ctx.lineTo(x+k,y+h);ctx.lineTo(x,y+h-k);ctx.lineTo(x,y+k);ctx.closePath()}
 export function diamond(ctx,x,y,s,color,filled=false){ctx.beginPath();ctx.moveTo(x,y-s);ctx.lineTo(x+s,y);ctx.lineTo(x,y+s);ctx.lineTo(x-s,y);ctx.closePath();ctx.strokeStyle=color;ctx.fillStyle=color;if(filled)ctx.fill();else ctx.stroke()}
 export function plate(ctx,r,fill,stroke=ARCANE.edge,cut=5){if(r.w<=0||r.h<=0)return;chamfer(ctx,r,cut);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke()}}

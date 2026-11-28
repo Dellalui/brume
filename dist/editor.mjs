@@ -585,7 +585,7 @@ let inventoryKey='',treeGenerator=null;
 function filteredInventory(){const q=normalizeSearch(inventoryQuery);return inventoryEntries().filter(item=>normalizeSearch(C.itemName(item,world)+' '+(item.variant||'')).includes(q)).map(canvasItem)}
 function renderInventory(){
  const forms=$('#creativeForms');forms.hidden=!inventoryOpen||!['zone','settings','trees'].includes(creativeCategory);
- $('#creativeSettings').hidden=creativeCategory!=='settings';$('#zoneTools').hidden=creativeCategory!=='zone';$('#treeGenerator').hidden=creativeCategory!=='trees';if(inventoryOpen&&creativeCategory==='trees')treeGenerator??=mountTreeGenerator($('#treeGenerator'),{materials:W.BLOCKS,onSave:config=>{const schema=C.createTreeSchema(config,uid());remember();world.schematics.push(schema);assignSlot({kind:'schema',id:schema.id,yaw:0,step:.1});creativeCategory='schemas';inventoryKey='';renderInventory();queueSave();toast('Arbre généré : '+schema.objects.length+' blocs')}});
+ $('#creativeSettings').hidden=creativeCategory!=='settings';$('#zoneTools').hidden=creativeCategory!=='zone';$('#treeGenerator').hidden=creativeCategory!=='trees';if(inventoryOpen&&creativeCategory==='trees')treeGenerator??=mountTreeGenerator($('#treeGenerator'),{materials:W.BLOCKS,onSave:config=>{const schema=C.createTreeSchema(config,uid());remember();world.schematics.push(schema);assignSlot({kind:'schema',id:schema.id,yaw:0,step:.1});creativeCategory='schemas';inventoryKey='';renderInventory();queueSave();toast('Arbre généré : un objet unifié')}});
  if(inventoryOpen&&creativeCategory==='settings')renderHeldLiquid();
  canvasHUD?.schedule();
 }
