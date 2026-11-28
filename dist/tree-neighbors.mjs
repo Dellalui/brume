@@ -1,7 +1,7 @@
 // Deterministic local growth steering. Existing scenery is never mutated
 // by a preview or by planting a new tree.
 import * as W from './world.mjs';
-import {validTreeGraph,treeExtent} from './unified-trees.mjs';
+import {validTreeGraph,treeExtent,treeTipEnd} from './unified-trees.mjs';
 import {treeConstructionBoxes,boxIntersects} from './tree-construction-collision.mjs';
 const plans=new WeakMap(),lastPlan=new WeakMap(),round=x=>Math.round(x*10000)/10000;
 const organic=o=>o?.type==='tree'&&validTreeGraph(o.treeGraph);
@@ -41,14 +41,20 @@ function obstacleQuery(map,o){
   const x=Math.min(a[0],b[0])-margin,y=Math.min(a[1],b[1])-margin,baseZ=Math.max(z,Math.min(a[2],b[2])-margin);
   return blocked({x,y,w:Math.abs(a[0]-b[0])+2*margin,d:Math.abs(a[1]-b[1])+2*margin,baseZ,height:Math.max(a[2],b[2])+margin-baseZ});
  }
- return {edge,blocked};
+ function tipClear(n,p){
+  const tip=treeTipEnd(n,p);if(!tip)return true;
+  const a=world(n),b=world(tip.point),r=n[3]+.08;
+  const x=Math.min(a[0],b[0])-r,y=Math.min(a[1],b[1])-r,baseZ=Math.max(z,Math.min(a[2],b[2])-r);
+  return !blocked({x,y,w:Math.abs(a[0]-b[0])+2*r,d:Math.abs(a[1]-b[1])+2*r,baseZ,height:Math.max(a[2],b[2])+r-baseZ});
+ }
+ return {edge,blocked,tipClear};
 }
 function solve(map,o){
  const fail=error=>({tree:o,replacements:new Map(),error}),query=obstacleQuery(map,o);
  const clear=t=>treeConstructionBoxes(t,W.elevation(t,map)).every(b=>!query.blocked(b));
  if(clear(o))return {tree:o,replacements:new Map(),error:''};
  if(o.treeConfig?.adaptCrowns===false)return fail('Un obstacle occupe la couronne de cet arbre.');
- const original=o.treeGraph,root=original[0].slice(),g=[root],ids=new Map([[0,0]]),terminated=new Set();
+ const original=o.treeGraph,root=original[0].slice(),g=[root],ids=new Map([[0,0]]),terminated=new Set(),source=[0],forcedTips=new Set();
  const children=new Map();for(let i=1;i<original.length;i++){const p=original[i][4];if(!children.has(p))children.set(p,[]);children.get(p).push(i)}
  if(query.edge([root[0],root[1],0],root,Math.min(.55,root[3]*1.22)+.08))return fail('La base du tronc est obstruée.');
  const steer=(d,angle,lift)=>[d[0]*Math.cos(angle)-d[1]*Math.sin(angle),d[0]*Math.sin(angle)+d[1]*Math.cos(angle),d[2]+lift];
@@ -79,24 +85,45 @@ function solve(map,o){
    if(best)break;
   }
   if(!best){if(trunk)return fail('Espace insuffisant pour le tronc.');continue}
-  const shortened=best.scale<.65,tip=shortened?'taper':n[5];
-  ids.set(i,g.length);g.push([...best.pos,best.r,pi,tip]);if(shortened)terminated.add(i);
+  const shortened=best.scale<.65,tip=shortened?'taper':n[5],index=g.length;
+  if(best.scale<.999||len(sub(best.pos,add(p.slice(0,3),direction)))>.001)forcedTips.add(index);
+  ids.set(i,index);source.push(i);g.push([...best.pos,best.r,pi,tip]);if(shortened)terminated.add(i);
  }
  if(g.length<2)return fail('Espace insuffisant pour cet arbre.');
- const parents=new Set(g.slice(1).map(n=>n[4]));
- for(let i=1;i<g.length;i++)if(!parents.has(i)){
-  const n=g[i],p=g[n[4]],d=sub(n.slice(0,3),p.slice(0,3)),l=len(d);
-  // A branch that has lost its descendants gets a small natural tip, not a
-  // freshly sawn cross-section. Allow room for the renderer's tip extension.
-  if(n[5]!=='broken'||!original.some(q=>q[5]==='broken'&&q.slice(0,3).every((v,j)=>v===n[j])))n[5]='taper';
-  if(n[5]!=='broken'){
-   n[3]=Math.max(.013,Math.min(n[3],p[3]*.7));
-   const extension=Math.max(.12,Math.min(.38,n[3]*2.6)),end=add(n.slice(0,3),mul(d,extension/Math.max(.001,l)));end[2]=Math.max(.018,end[2]);
-   if(query.edge(n,end,n[3])){const pos=add(p.slice(0,3),mul(d,.7)).map(round);if(len(sub(pos,p.slice(0,3)))>.115){n.splice(0,3,...pos);n[3]=Math.max(.013,n[3]*.5)}}
+ // Walk from the tips towards the root. A node becomes a natural end
+ // whenever obstacle steering removed its continuation, even if the
+ // original graph marked it as a deliberate broken branch.
+ const childCount=Array(g.length).fill(0),dropped=new Set();
+ for(const n of g.slice(1))childCount[n[4]]++;
+ for(let i=g.length-1;i>0;i--){
+  if(childCount[i])continue;
+  const n=g[i],p=g[n[4]],d=sub(n.slice(0,3),p.slice(0,3));
+  const interrupted=forcedTips.has(i)||children.has(source[i]);
+  if(!interrupted&&(n[5]==='broken'||query.tipClear(n,p)))continue;
+  // The preceding edge itself now tapers, rather than leaving a thick
+  // cylinder with a tiny cone glued to its end. Re-test the actual tip
+  // before accepting it, including the final mesh extension.
+  let found=false;
+  for(const scale of [1,.85,.65,.45,.25]){
+   const pos=add(p.slice(0,3),mul(d,scale)).map(round);
+   if(len(sub(pos,p.slice(0,3)))<=.115)continue;
+   const radius=round(Math.max(.013,Math.min(n[3],p[3]*.32)*Math.sqrt(scale)));
+   const tip=[...pos,radius,n[4],'taper'];
+   if(query.edge(p,tip,Math.max(p[3],radius))||!query.tipClear(tip,p))continue;
+   g[i]=tip;found=true;break;
   }
+  // If there is no room even for a short taper, omit just this terminal
+  // segment and let its parent form a tip if it has no other children.
+  if(!found){dropped.add(i);childCount[n[4]]--;}
  }
- if(!validTreeGraph(g))return fail('Structure adaptée invalide.');
- const fitted=withGraph(o,g);
+ const remap=new Map(),final=[];
+ for(let i=0;i<g.length;i++){
+  if(dropped.has(i))continue;
+  const n=g[i].slice();if(i>0)n[4]=remap.get(n[4]);
+  remap.set(i,final.length);final.push(n);
+ }
+ if(!validTreeGraph(final))return fail('Espace insuffisant pour cet arbre.');
+ const fitted=withGraph(o,final);
  if(!clear(fitted))return fail('Espace insuffisant pour contourner les obstacles.');
  return {tree:fitted,replacements:new Map(),error:''};
 }

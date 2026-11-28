@@ -1,7 +1,7 @@
 // Conservative construction hitboxes, independent of rendering. A tree keeps
 // its unified mesh and does not acquire separate visible objects or rigid bodies.
 // One cuboid per growth edge, plus root and terminal volumes.
-import {validTreeGraph} from './unified-trees.mjs';
+import {validTreeGraph,treeTipEnd} from './unified-trees.mjs';
 const graphCache=new WeakMap(),objectCache=new WeakMap();
 const extent=(a,b,r)=>[Math.min(a[0],b[0])-r,Math.min(a[1],b[1])-r,Math.max(0,Math.min(a[2],b[2])-r),Math.max(a[0],b[0])+r,Math.max(a[1],b[1])+r,Math.max(a[2],b[2])+r];
 function localSegments(graph){
@@ -11,9 +11,8 @@ function localSegments(graph){
  for(let i=1;i<graph.length;i++){
   const n=graph[i],p=graph[n[4]],d=Math.hypot(n[0]-p[0],n[1]-p[1],n[2]-p[2]),margin=.20*d+.035;
   parts.push([p,n,Math.max(p[3],n[3])+margin]);
-  if(!parents.has(i)&&n[5]!=='broken'){
-   const length=n[5]==='taper'?Math.max(.12,Math.min(.38,n[3]*2.6)):Math.max(.035,Math.min(.13,n[3]*.6));
-   const tip=n.slice(0,3).map((x,k)=>x+(x-p[k])/Math.max(.001,d)*length);tip[2]=Math.max(.018,tip[2]);parts.push([n,tip,n[3]+.08]);
+  if(!parents.has(i)){
+   const tip=treeTipEnd(n,p);if(tip)parts.push([n,tip.point,n[3]+.08]);
   }
  }
  graphCache.set(graph,parts);return parts;

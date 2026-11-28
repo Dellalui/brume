@@ -12,6 +12,16 @@ export function packTreeGraph(nodes){
 export function validTreeGraph(graph){
  return Array.isArray(graph)&&graph.length>=2&&graph.length<=96&&graph.every((n,i)=>Array.isArray(n)&&n.length===6&&n.slice(0,4).every(Number.isFinite)&&Math.abs(n[0])<=30&&Math.abs(n[1])<=30&&n[2]>=0&&n[2]<=25&&n[3]>=.013&&n[3]<=.46&&(i===0?n[4]===-1:Number.isInteger(n[4])&&n[4]>=0&&n[4]<i)&&['round','broken','taper'].includes(n[5])&&(i===0||Math.hypot(n[0]-graph[n[4]][0],n[1]-graph[n[4]][1],n[2]-graph[n[4]][2])>.1));
 }
+// Shared tip geometry for rendering, growth steering and construction
+// collision. Natural ends close with bark; only a deliberate cut uses end grain.
+export function treeTipEnd(n,p){
+ if(n[5]==='broken')return null;
+ const d=sub(n.slice(0,3),p.slice(0,3)),l=len(d);
+ if(l<=EPS)return null;
+ const r=n[3],taper=n[5]==='taper',length=taper?clamp(r*3,.055,.38):clamp(r*.85,.035,.15);
+ const point=add(n.slice(0,3),mul(d,length/l));point[2]=Math.max(.018,point[2]);
+ return {point,radius:taper?.001:Math.max(.001,r*.08)};
+}
 export const isUnifiedTree=o=>o?.type==='tree'&&Array.isArray(o.treeGraph);
 export function treeExtent(graph){
  if(!validTreeGraph(graph))throw Error('Structure végétale invalide.');
@@ -47,10 +57,10 @@ export function unifiedTreeGeometry(T,graph){
  for(const n of nodes.slice(1))nodes[n.parent].children.push(n);
  const pos=[],normal=[],uv=[],side=[],caps=[],distAt=new Map(),starts=[];
  const vertex=(p,n,u,v)=>{const i=pos.length/3;pos.push(...p);normal.push(...n);uv.push(u,v);return i};
- function cap(sample,u,v,sides,reverse){
+ function cap(sample,u,v,sides,reverse,indices=caps){
   const n=mul(sample.t,reverse?-1:1),c=vertex(sample.p,n,0,0),ring=[];
   for(let j=0;j<sides;j++){const a=j*Math.PI*2/sides,x=Math.cos(a)*sample.r,y=Math.sin(a)*sample.r;ring.push(vertex(add(sample.p,add(mul(u,x),mul(v,y))),n,x,y))}
-  for(let j=0;j<sides;j++){const k=(j+1)%sides;if(reverse)caps.push(c,ring[k],ring[j]);else caps.push(c,ring[j],ring[k])}
+  for(let j=0;j<sides;j++){const k=(j+1)%sides;if(reverse)indices.push(c,ring[k],ring[j]);else indices.push(c,ring[j],ring[k])}
  }
  function continuation(n){
   if(!n.children.length)return null;
@@ -66,10 +76,10 @@ export function unifiedTreeGeometry(T,graph){
    const next=continuation(n);for(const c of n.children)if(c!==next)forks.push([c,n]);
    if(!next)break;n=next;
   }
-  const last=points.at(-1),prev=points.at(-2),direction=unit(sub(last.p,prev.p));
-  if(n.tip!=='broken'){
-   const extension=n.tip==='taper'?clamp(n.r*2.6,.12,.38):clamp(n.r*.6,.035,.13),end=add(last.p,mul(direction,extension));end[1]=Math.max(.018,end[1]);
-   if(len(sub(end,last.p))>EPS)points.push({p:end,r:n.tip==='taper'?.0025:Math.max(.003,n.r*.27),node:null});
+  const last=points.at(-1),tip=n.parent<0?null:treeTipEnd(graph[n.i],graph[n.parent]);
+  if(tip){
+   const end=[tip.point[0],tip.point[2],tip.point[1]];
+   if(len(sub(end,last.p))>EPS)points.push({p:end,r:tip.radius,node:null});
   }
   const samples=smoothSamples(points),maxR=Math.max(...points.map(p=>p.r)),sides=maxR>.22?12:maxR>.07?10:6,circumference=Math.PI*2*maxR;
   let distance=parent?(distAt.get(parent.i)||0):0,u=basis(samples[0].t),v=cross(samples[0].t,u),previousRing=null;
@@ -85,7 +95,7 @@ export function unifiedTreeGeometry(T,graph){
    }
    if(previousRing)for(let j=0;j<sides;j++){const a=previousRing[j],b=previousRing[j+1],c=ring[j],d=ring[j+1];side.push(a,b,c,b,d,c)}
    if(k===0&&!parent)cap(q,u,v,sides,true);
-   if(k===samples.length-1)cap(q,u,v,sides,false);
+   if(k===samples.length-1)cap(q,u,v,sides,false,n.tip==='broken'?caps:side);
    previousRing=ring;
   }
   for(const [c,p]of forks)buildPath(c,p);

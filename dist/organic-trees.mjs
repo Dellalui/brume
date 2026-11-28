@@ -55,7 +55,7 @@ export function generateLeaflessTree(profile,seed=profile.seed){
   const next=step(prev,[Math.cos(angle)*lean,Math.sin(angle)*lean,1],r,null,false,true);
   if(!next)break;trunk.push(next);
  }
- trunk.at(-1).tip=profile.tipStyle!=='mixed'?profile.tipStyle:profile.broken?'broken':rand()<.38?'broken':'taper';
+ trunk.at(-1).tip=profile.tipStyle!=='mixed'?profile.tipStyle:profile.broken?'broken':rand()<.38?'round':'taper';
  const turn=2.399963229728653,rootAngle=rand()*Math.PI*2;
  for(let i=0;i<profile.roots;i++){
   const a=rootAngle+i*turn,run=profile.broken?2+(i%2):1+(i%2);let n=root,previous=null;
@@ -75,7 +75,9 @@ export function generateLeaflessTree(profile,seed=profile.seed){
    if(!p)break;n=p;prev=n.pos.map((x,k)=>x-old.pos[k]);chain.push({n,heading});
   }
   if(!chain.length)return;
-  n.tip=profile.tipStyle!=='mixed'?profile.tipStyle:rand()<.19&&n.radius>.045?'broken':rand()<.22?'round':'taper';
+  // Keep the seeded random stream/topology unchanged. Mixed now means
+  // two natural terminal styles, not random saw cuts.
+  n.tip=profile.tipStyle!=='mixed'?profile.tipStyle:rand()<.19&&n.radius>.045?'taper':rand()<.22?'round':'taper';
   if(!depth||chain.length<2)return;
   const forks=order===0?2:1;
   for(let j=0;j<forks;j++){
