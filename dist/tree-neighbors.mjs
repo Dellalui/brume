@@ -1,81 +1,111 @@
-// Local, deterministic crown separation. Preview never edits the map.
-// Each conflicting pair gets a horizontal boundary between their trunks.
-// Branches that would cross it are shortened, preserving the growth graph.
+// Deterministic local growth steering. Existing scenery is never mutated
+// by a preview or by planting a new tree.
 import * as W from './world.mjs';
 import {validTreeGraph,treeExtent} from './unified-trees.mjs';
 import {treeConstructionBoxes,boxIntersects} from './tree-construction-collision.mjs';
-const GAP=.10,plans=new WeakMap(),lastPlan=new WeakMap(),round=x=>Math.round(x*10000)/10000;
+const plans=new WeakMap(),lastPlan=new WeakMap(),round=x=>Math.round(x*10000)/10000;
 const organic=o=>o?.type==='tree'&&validTreeGraph(o.treeGraph);
-function withGraph(o,g){
- if(g===o.treeGraph)return o;
- const center=W.center(o),e=treeExtent(g);
- return {...o,...e,x:center.x-e.w/2,y:center.y-e.d/2,treeGraph:g};
-}
-function projected(o,n,axis){const c=W.center(o),a=o.facing||0,co=Math.cos(a),si=Math.sin(a);return axis===0?c.x+n[0]*co-n[1]*si:c.y+n[0]*si+n[1]*co}
-export function shortenCrown(o,axis,sign,boundary,extra=0){
- const g=o.treeGraph;if(!validTreeGraph(g))return o;
- // A modest halo covers the curved interpolant and the construction boxes.
- const p=n=>sign*(projected(o,n,axis)-boundary),out=[g[0].slice()],ids=new Map([[0,0]]),terminal=new Set();
- let changed=false;
- for(let i=1;i<g.length;i++){
-  const n=g[i],parent=g[n[4]],pi=ids.get(n[4]);if(pi===undefined||terminal.has(n[4])){changed=true;continue}
-  const length=Math.hypot(n[0]-parent[0],n[1]-parent[1],n[2]-parent[2]),margin=Math.max(n[3],parent[3])+.20*length+.035+extra;
-  const a=p(parent)+margin,b=p(n)+margin;
-  let q=n.slice();q[4]=pi;
-  if(b>0){
-   if(a>=0||b<=a){changed=true;continue}
-   const t=Math.min(1,Math.max(0,-a/(b-a)));
-   if(t*length<.115){changed=true;continue}
-   q=[...n.slice(0,4).map((v,j)=>round(parent[j]+(v-parent[j])*t)),pi,'broken'];
-   q[3]=Math.max(.013,q[3]);terminal.add(i);changed=true;
-  }else if(n[5]!=='broken'&&p(n)+n[3]+.48+extra>0){q[5]='broken';changed=true}
-  ids.set(i,out.length);out.push(q);
+const sub=(a,b)=>a.map((x,i)=>x-b[i]),add=(a,b)=>a.map((x,i)=>x+b[i]),mul=(a,s)=>a.map(x=>x*s),len=a=>Math.hypot(...a),unit=a=>mul(a,1/Math.max(1e-8,len(a))),dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0);
+function withGraph(o,g){if(g===o.treeGraph)return o;const c=W.center(o),e=treeExtent(g);return {...o,...e,x:c.x-e.w/2,y:c.y-e.d/2,treeGraph:g}}
+function obstacleQuery(map,o){
+ const c=W.center(o),z=W.elevation(o,map),a=o.facing||0,co=Math.cos(a),si=Math.sin(a),reach=Math.hypot(o.w,o.d)/2+3;
+ const world=p=>[c.x+p[0]*co-p[1]*si,c.y+p[0]*si+p[1]*co,z+p[2]];
+ const bins=new Map(),cell=4,key=(x,y)=>x+','+y;
+ function insert(b){for(let x=Math.floor(b.x/cell);x<=Math.floor((b.x+b.w)/cell);x++)for(let y=Math.floor(b.y/cell);y<=Math.floor((b.y+b.d)/cell);y++){const k=key(x,y);if(!bins.has(k))bins.set(k,[]);bins.get(k).push(b)}}
+ for(const t of map.objects){
+  if(t.id===o.id||t.blocking===false||W.character(t))continue;
+  if((t.type==='door'||t.type==='build_door')&&t.open)continue;
+  const b=W.bounds(t),tz=W.elevation(t,map);
+  if(b.x>c.x+reach||b.x+b.w<c.x-reach||b.y>c.y+reach||b.y+b.h<c.y-reach||tz+(t.height||1)<z||tz>z+o.height+3)continue;
+  if(t.type==='tree'){for(const box of treeConstructionBoxes(t,tz))insert(box)}
+  else insert({x:b.x,y:b.y,w:b.w,d:b.h,baseZ:tz,height:t.height||1});
  }
- if(!changed)return o;
- return validTreeGraph(out)?withGraph(o,out):null;
-}
-function touching(a,b,map){
- const ca=W.center(a),cb=W.center(b),za=W.elevation(a,map),zb=W.elevation(b,map);
- if(Math.hypot(ca.x-cb.x,ca.y-cb.y)>Math.hypot(a.w||1,a.d||1)/2+Math.hypot(b.w||1,b.d||1)/2+1)return false;
- if(za+(a.height||1)+.1<=zb||zb+(b.height||1)+.1<=za)return false;
- const aa=treeConstructionBoxes(a,za),bb=treeConstructionBoxes(b,zb);
- return aa.some(x=>bb.some(y=>boxIntersects({...x,x:x.x-GAP/2,y:x.y-GAP/2,w:x.w+GAP,d:x.d+GAP},y)));
-}
-function solve(map,original){
- let tree=original;const replacements=new Map(),lockedGroups=new Set((map.groups||[]).filter(g=>g.locked).map(g=>g.id)),origin=W.center(tree);
- const nearby=map.objects.filter(o=>o.type==='tree'&&o.id!==tree.id&&o.blocking!==false&&W.levelOf(o)===W.levelOf(tree)).sort((a,b)=>{const x=W.center(a),y=W.center(b);return Math.hypot(x.x-origin.x,x.y-origin.y)-Math.hypot(y.x-origin.x,y.y-origin.y)||String(a.id).localeCompare(String(b.id))});
- const fail=error=>({tree:original,replacements:new Map(),error});
- for(const old of nearby){
-  if(!touching(tree,old,map))continue;
-  const a=W.center(tree),b=W.center(old),dx=b.x-a.x,dy=b.y-a.y,axis=Math.abs(dx)>=Math.abs(dy)?0:1,sign=Math.sign(axis===0?dx:dy)||1,dist=Math.abs(axis===0?dx:dy),ac=axis===0?a.x:a.y;
-  const ra=Math.min(.55,tree.trunkRadius||.13)+.09,rb=Math.min(.55,old.trunkRadius||.13)+.09;
-  if(dist<ra+rb+GAP)return fail('Les troncs sont trop proches.');
-  const split=ac+sign*Math.max(ra+GAP/2,Math.min(dist-rb-GAP/2,(dist+ra-rb)/2));
-  const canTrim=organic(old)&&!old.locked&&!lockedGroups.has(old.group);
-  let fitted=null,neighbor=null;
-  for(const extra of [0,.10,.24]){
-   fitted=shortenCrown(tree,axis,sign,split-sign*GAP/2,extra);
-   neighbor=canTrim?shortenCrown(old,axis,-sign,split+sign*GAP/2,extra):old;
-   if(fitted&&neighbor&&!touching(fitted,neighbor,map))break;
-   fitted=neighbor=null;
+ function blocked(b){
+  if(b.baseZ+b.height>32||b.x<0||b.y<0||b.x+b.w>map.width||b.y+b.d>map.height)return true;
+  const seen=new Set();
+  for(let x=Math.floor(b.x/cell);x<=Math.floor((b.x+b.w)/cell);x++)for(let y=Math.floor(b.y/cell);y<=Math.floor((b.y+b.d)/cell);y++)for(const v of bins.get(key(x,y))||[]){if(seen.has(v))continue;seen.add(v);if(boxIntersects(b,v))return true}
+  for(let x=Math.floor(b.x);x<Math.ceil(b.x+b.w);x++)for(let y=Math.floor(b.y);y<Math.ceil(b.y+b.d);y++){
+   if(!W.activeCell(map,x,y))return true;
+   if(b.baseZ<W.groundAt(map,x,y)-.0001)return true;
+   for(const [base,material] of Object.entries(map.blocks?.[W.cellKey(x,y)]||{})){
+    if(W.BLOCKS[material]?.solid===false)continue;
+    if(boxIntersects(b,{x,y,w:1,d:1,baseZ:+base,height:W.blockSize(map,x,y,+base)}))return true;
+   }
   }
-  if(!fitted||!neighbor)return fail(canTrim?'Pas assez de place pour séparer les couronnes.':'Un arbre protégé occupe cet espace.');
-  tree=fitted;if(neighbor!==old)replacements.set(old.id,neighbor);
+  return false;
  }
- // Recheck previous pairs after every pruning pass; no overlap is accepted
- // just because a pair was considered earlier in the loop.
- for(const old of nearby)if(touching(tree,replacements.get(old.id)||old,map))return fail('Pas assez de place pour séparer les couronnes.');
- return {tree,replacements,error:''};
+ // Same conservative edge envelope as construction collision. Ground contact
+ // is allowed but a raised neighboring column remains a real obstacle.
+ function edge(p,q,r,terminal=false){
+  const a=world(p),b=world(q),margin=r+.20*len(sub(q,p))+.035+(terminal?.09:0);
+  const x=Math.min(a[0],b[0])-margin,y=Math.min(a[1],b[1])-margin,baseZ=Math.max(z,Math.min(a[2],b[2])-margin);
+  return blocked({x,y,w:Math.abs(a[0]-b[0])+2*margin,d:Math.abs(a[1]-b[1])+2*margin,baseZ,height:Math.max(a[2],b[2])+margin-baseZ});
+ }
+ return {edge,blocked};
+}
+function solve(map,o){
+ const fail=error=>({tree:o,replacements:new Map(),error}),query=obstacleQuery(map,o);
+ const clear=t=>treeConstructionBoxes(t,W.elevation(t,map)).every(b=>!query.blocked(b));
+ if(clear(o))return {tree:o,replacements:new Map(),error:''};
+ if(o.treeConfig?.adaptCrowns===false)return fail('Un obstacle occupe la couronne de cet arbre.');
+ const original=o.treeGraph,root=original[0].slice(),g=[root],ids=new Map([[0,0]]),terminated=new Set();
+ const children=new Map();for(let i=1;i<original.length;i++){const p=original[i][4];if(!children.has(p))children.set(p,[]);children.get(p).push(i)}
+ if(query.edge([root[0],root[1],0],root,Math.min(.55,root[3]*1.22)+.08))return fail('La base du tronc est obstruée.');
+ const steer=(d,angle,lift)=>[d[0]*Math.cos(angle)-d[1]*Math.sin(angle),d[0]*Math.sin(angle)+d[1]*Math.cos(angle),d[2]+lift];
+ for(let i=1;i<original.length;i++){
+  const n=original[i],oldParent=original[n[4]],pi=ids.get(n[4]);
+  if(pi===undefined||terminated.has(n[4]))continue;
+  const p=g[pi],direction=sub(n.slice(0,3),oldParent.slice(0,3)),length=len(direction),u=unit(direction),terminal=!children.has(i);
+  const incoming=p[4]>=0?unit(sub(p.slice(0,3),g[p[4]].slice(0,3))):u;
+  const trunk=n[3]>.23&&direction[2]>.55*length;
+  let best=null;
+  // Try the original direction, then modest horizontal turns, upward and
+  // downward deflections, and only then smaller lengths. Never create cuts.
+  for(const scale of [1,.85,.65,.42,.24]){
+   if(trunk&&scale<.65)break;
+   const candidates=[];
+   for(const angle of [0,.28,-.28,.56,-.56,.95,-.95,1.35,-1.35,1.8,-1.8,Math.PI])for(const lift of [0,.35,-.35,.70,-.70]){
+    if(trunk&&(Math.abs(angle)>1||lift<-.35))continue;
+    const v=unit(steer(u,angle,lift));
+    if(len(v)<.5)continue;
+    const pos=add(p.slice(0,3),mul(v,length*scale)).map(round);pos[2]=Math.max(.02,pos[2]);
+    if(len(sub(pos,p.slice(0,3)))<=.115||pos[2]>24.6||Math.abs(pos[0])>29||Math.abs(pos[1])>29)continue;
+    const r=round(Math.max(.013,n[3]*(scale<.65?.65:1)));
+    const score=dot(v,u)*3+dot(v,incoming)*.55-Math.abs(lift)*.18-Math.abs(angle)*.08;
+    candidates.push({pos,r,score,scale});
+   }
+   candidates.sort((a,b)=>b.score-a.score);
+   for(const q of candidates){if(!query.edge(p,q.pos,Math.max(p[3],q.r),terminal)){best=q;break}}
+   if(best)break;
+  }
+  if(!best){if(trunk)return fail('Espace insuffisant pour le tronc.');continue}
+  const shortened=best.scale<.65,tip=shortened?'taper':n[5];
+  ids.set(i,g.length);g.push([...best.pos,best.r,pi,tip]);if(shortened)terminated.add(i);
+ }
+ if(g.length<2)return fail('Espace insuffisant pour cet arbre.');
+ const parents=new Set(g.slice(1).map(n=>n[4]));
+ for(let i=1;i<g.length;i++)if(!parents.has(i)){
+  const n=g[i],p=g[n[4]],d=sub(n.slice(0,3),p.slice(0,3)),l=len(d);
+  // A branch that has lost its descendants gets a small natural tip, not a
+  // freshly sawn cross-section. Allow room for the renderer's tip extension.
+  if(n[5]!=='broken'||!original.some(q=>q[5]==='broken'&&q.slice(0,3).every((v,j)=>v===n[j])))n[5]='taper';
+  if(n[5]!=='broken'){
+   n[3]=Math.max(.013,Math.min(n[3],p[3]*.7));
+   const extension=Math.max(.12,Math.min(.38,n[3]*2.6)),end=add(n.slice(0,3),mul(d,extension/Math.max(.001,l)));end[2]=Math.max(.018,end[2]);
+   if(query.edge(n,end,n[3])){const pos=add(p.slice(0,3),mul(d,.7)).map(round);if(len(sub(pos,p.slice(0,3)))>.115){n.splice(0,3,...pos);n[3]=Math.max(.013,n[3]*.5)}}
+  }
+ }
+ if(!validTreeGraph(g))return fail('Structure adaptée invalide.');
+ const fitted=withGraph(o,g);
+ if(!clear(fitted))return fail('Espace insuffisant pour contourner les obstacles.');
+ return {tree:fitted,replacements:new Map(),error:''};
 }
 export function planTreePlanting(map,o){
  if(!map||!organic(o))return o;
  const c=W.center(o),key=[map.buildRevision||0,map.blockRevision||0,c.x,c.y,o.baseZ,o.facing,o.treeConfig?.adaptCrowns!==false].join(','),prev=lastPlan.get(map);
  let plan=prev?.key===key&&prev.graph===o.treeGraph&&prev.objects===map.objects?prev.plan:null;
- if(!plan){plan=o.treeConfig?.adaptCrowns===false?{tree:o,replacements:new Map(),error:''}:solve(map,o);lastPlan.set(map,{key,graph:o.treeGraph,objects:map.objects,plan})}
- const tree={...o,...plan.tree,id:o.id};
- plans.set(tree,{replacements:plan.replacements,error:plan.error});return tree;
+ if(!plan){plan=solve(map,o);lastPlan.set(map,{key,graph:o.treeGraph,objects:map.objects,plan})}
+ const tree={...o,...plan.tree,id:o.id};plans.set(tree,{replacements:plan.replacements,error:plan.error,adapted:plan.tree.treeGraph!==o.treeGraph});return tree;
 }
 export const treePlantingPlan=o=>plans.get(o);
-export function applyTreePlanting(map,objects){
- for(const o of objects){const p=plans.get(o);if(!p||p.error)continue;for(const [id,next]of p.replacements){const existing=map.objects.find(t=>t.id===id);if(existing)Object.assign(existing,next)}}
-}
+export function applyTreePlanting(map,objects){/* Existing trees remain unchanged. */}

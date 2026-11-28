@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import * as W from '../dist/world.mjs';
+import {planTreePlanting,treePlantingPlan,applyTreePlanting} from '../dist/tree-neighbors.mjs';
+import {treeExtent,validTreeGraph} from '../dist/unified-trees.mjs';
+import {treeConstructionBoxes,boxIntersects} from '../dist/tree-construction-collision.mjs';
+const map=W.newMap('test','Growth',64,64);W.prepareBlocks(map);
+const graph=[[0,0,.5,.16,-1,'round'],[0,0,1.5,.14,0,'round'],[1,0,2,.09,1,'round'],[2,0,2.5,.05,2,'taper']];
+const extent=treeExtent(graph),tree={...W.newObject('tree',0,0,'new'),...extent,x:20.5-extent.w/2,y:20.5-extent.d/2,baseZ:0,treeGraph:graph,treeConfig:{adaptCrowns:true}};
+const clean=planTreePlanting(map,tree);assert.equal(treePlantingPlan(clean).error,'');assert.deepEqual(clean.treeGraph,graph);
+const obstacle={...W.newObject('block',22,20,'wall'),baseZ:1,w:1,d:1,height:3,material:'stone'};
+map.objects.push(obstacle);map.buildRevision=1;
+const before=JSON.stringify(map.objects),fitted=planTreePlanting(map,tree),p=treePlantingPlan(fitted);
+assert.equal(p.error,'');assert(p.adapted);assert(validTreeGraph(fitted.treeGraph));assert.notDeepEqual(fitted.treeGraph,graph);assert(fitted.treeGraph.every(n=>n[5]!=='broken'));
+assert(treeConstructionBoxes(fitted,0).every(b=>!boxIntersects(b,obstacle)));
+assert.deepEqual(planTreePlanting(map,tree).treeGraph,fitted.treeGraph);
+applyTreePlanting(map,[fitted]);assert.equal(JSON.stringify(map.objects),before);
+console.log('PASS: deterministic tree obstacle steering, no new cut ends, no mutation of existing scenery');
