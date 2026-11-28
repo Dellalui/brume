@@ -33,10 +33,19 @@ function clipFraction(a,b,boxes,r,slideContacts=false){
    // a continuous surface. Still require a clear sweep of the real solid
    // and a separating axis that is stationary or moving outward.
    if((hit===0||slideContacts)&&cameraBoxEntry(a,b,box,0)===Infinity){
-   if(hit===0&&cameraBoxEntry(b,b,box,r)===Infinity)continue;
-   const c=Math.cos(box.angle||0),s=Math.sin(box.angle||0),p=[(a.x-box.x)*c+(a.z-box.z)*s,a.y-box.y,-(a.x-box.x)*s+(a.z-box.z)*c],q=[(b.x-box.x)*c+(b.z-box.z)*s,b.y-box.y,-(b.x-box.x)*s+(b.z-box.z)*c];
-   const lo=[-box.w/2,-0,-box.d/2],hi=[box.w/2,box.h,box.d/2];
-   if(p.some((v,i)=>v<=lo[i]&&q[i]<=v||v>=hi[i]&&q[i]>=v))continue;
+   if(!slideContacts&&hit===0&&cameraBoxEntry(b,b,box,r)===Infinity)continue;
+   const c=box.c??Math.cos(box.angle||0),s=box.s??Math.sin(box.angle||0),p=[(a.x-box.x)*c+(a.z-box.z)*s,a.y-box.y,-(a.x-box.x)*s+(a.z-box.z)*c],q=[(b.x-box.x)*c+(b.z-box.z)*s,b.y-box.y,-(b.x-box.x)*s+(b.z-box.z)*c];
+   const lo=[-box.w/2,0,-box.d/2],hi=[box.w/2,box.h,box.d/2];
+   if(!slideContacts){if(p.some((v,i)=>v<=lo[i]&&q[i]<=v||v>=hi[i]&&q[i]>=v))continue}
+   else if(p.some((v,i)=>{
+    // Only a genuinely separating axis can waive the expanded radius.
+    // A stationary horizontal coordinate exactly on a voxel seam is
+    // NOT free space: adjacent columns can occupy both sides of it.
+    // Preserve roof/floor skimming at their exact horizontal surface.
+    if(i===1)return v<=lo[i]+EPS&&q[i]<=v+EPS||v>=hi[i]-EPS&&q[i]>=v-EPS;
+    return v<lo[i]-EPS&&q[i]<=v+EPS||v>hi[i]+EPS&&q[i]>=v-EPS||
+      v<=lo[i]&&q[i]<v-EPS||v>=hi[i]&&q[i]>v+EPS;
+   }))continue;
   }
   t=hit;
  }
@@ -44,9 +53,9 @@ function clipFraction(a,b,boxes,r,slideContacts=false){
 }
 // Reuse exact integer terrain windows while the camera or player moves inside
 // them. Dynamic objects and derived lava remain live; only voxel boxes cache.
-const terrainWindows=new WeakMap();
-function appendBox(boxes,x,y,z,w,h,d,angle=0){
- if([x,y,z,w,h,d,angle].every(Number.isFinite)&&w>0&&h>0&&d>0)boxes.push({x,y,z,w,h,d,angle,c:Math.cos(angle),s:Math.sin(angle)});
+const terrainWindows=new WeakMap(),lastFlyPose=new WeakMap();
+function appendBox(boxes,x,y,z,w,h,d,angle=0,ground=false){
+ if([x,y,z,w,h,d,angle].every(Number.isFinite)&&w>0&&h>0&&d>0)boxes.push({x,y,z,w,h,d,angle,c:Math.cos(angle),s:Math.sin(angle),ground});
 }
 function terrainBoxes(map,x0,x1,z0,z1){
  const left=Math.max(0,Math.floor(x0)),right=Math.min(map.width,Math.ceil(x1)),top=Math.max(0,Math.floor(z0)),bottom=Math.min(map.height,Math.ceil(z1));
@@ -62,7 +71,7 @@ function terrainBoxes(map,x0,x1,z0,z1){
  for(let z=top;z<bottom;z++)for(let x=left;x<right;x++){
   if(!W.activeCell(map,x,z))continue;
   const ground=map.blocks?W.groundAt(map,x,z):W.terrainHeight(map,x,z);
-  appendBox(boxes,x+.5,-200,z+.5,1,ground+200,1);
+  appendBox(boxes,x+.5,-200,z+.5,1,ground+200,1,0,true);
   for(const [base,kind] of Object.entries(map.blocks?.[x+','+z]||{}))if(W.BLOCKS[kind]?.solid||kind==='lava')appendBox(boxes,x+.5,+base,z+.5,1,W.blockSize(map,x,z,+base),1);
  }
  // Small LRU: the cache cannot grow with the number of explored sectors.
@@ -89,25 +98,58 @@ export function boxesNear(map,origin,range,ignore,liquids=null,player=false){
  for(const b of liquids?.cells||[])if(b.kind==='lava'&&!b.source&&b.x+1>=x0&&b.x<=x1&&b.y+1>=z0&&b.y<=z1)add(b.x+.5,b.z,b.y+.5,1,b.renderH||b.h,1);
  return boxes;
 }
+// An exact grid seam can be interior to the union of several boxes even
+// though no individual open box contains its center. Check this exceptional
+// case only at integer cell boundaries; normal movement stays on the fast path.
+function flyEmbedded(a,boxes){
+ if(!clearPoint(a,boxes,0))return true;
+ if(Math.abs(a.x-Math.round(a.x))>EPS*2&&Math.abs(a.z-Math.round(a.z))>EPS*2)return false;
+ const e=EPS*4;
+ for(const dx of [-e,e])for(const dz of [-e,e])if(clearPoint(new T.Vector3(a.x+dx,a.y,a.z+dz),boxes,0))return false;
+ return true;
+}
 export function sweepCameraMotion(map,from,to,liquids=null){
  const a=new T.Vector3(from.x,from.y,from.z),b=new T.Vector3(to.x,to.y,to.z);
  if(![...a.toArray(),...b.toArray()].every(Number.isFinite))return {...from};
  if(a.distanceTo(b)>30)b.sub(a).setLength(30).add(a);
  const delta=b.clone().sub(a),radius=.19,boxes=boxesNear(map,a,delta.length()+3,null,liquids);
- // Recover a camera left inside a newly constructed solid or loaded save.
- if(!clearPoint(a,boxes,0)){
-  const candidates=[];for(const box of boxes){if(cameraBoxEntry(a,a,box,0)!==0)continue;const c=Math.cos(box.angle||0),s=Math.sin(box.angle||0),u=(a.x-box.x)*c+(a.z-box.z)*s,v=-(a.x-box.x)*s+(a.z-box.z)*c;
-   for(const [x,y,z] of [[-box.w/2-radius-.03,a.y,v],[box.w/2+radius+.03,a.y,v],[u,a.y,-box.d/2-radius-.03],[u,a.y,box.d/2+radius+.03],[u,box.y-radius-.03,v],[u,box.y+box.h+radius+.03,v]]){const p=new T.Vector3(box.x+x*c-z*s,y,box.z+x*s+z*c);if(p.distanceTo(a)<=4&&clearPoint(p,boxes,radius))candidates.push(p)}
+ const commit=p=>{lastFlyPose.set(map,p.clone());return {x:p.x,y:p.y,z:p.z}};
+ // Recover an invalid pose from a terrain edit, recenter, or older save.
+ // Prefer the former clear side, never use the underside of implicit soil.
+ if(flyEmbedded(a,boxes)){
+  const candidates=[],margin=radius+.03,old=lastFlyPose.get(map);
+  const prior=old&&old.distanceTo(a)<=4&&old.distanceTo(a)>EPS&&clearPoint(old,boxes,radius)?old:null;
+  const contact=boxes.filter(box=>cameraBoxEntry(a,a,box,EPS*4)===0);
+  const soil=contact.some(box=>box.ground&&a.y<box.y+box.h-EPS);
+  const add=p=>{if((soil?p.distanceTo(a)<=24&&p.y>=a.y-EPS:p.distanceTo(a)<=4)&&clearPoint(p,boxes,radius))candidates.push(p)};
+  for(const box of contact){
+   const c=box.c??Math.cos(box.angle||0),s=box.s??Math.sin(box.angle||0),u=(a.x-box.x)*c+(a.z-box.z)*s,v=-(a.x-box.x)*s+(a.z-box.z)*c;
+   const exits=[[-box.w/2-margin,a.y,v],[box.w/2+margin,a.y,v],[u,a.y,-box.d/2-margin],[u,a.y,box.d/2+margin],[u,box.y+box.h+margin,v]];
+   if(!box.ground)exits.push([u,box.y-margin,v]);
+   for(const [x,y,z]of exits)add(new T.Vector3(box.x+x*c-z*s,y,box.z+x*s+z*c));
   }
-  candidates.sort((p,q)=>p.distanceToSquared(a)-q.distanceToSquared(a));
+  // A stack of adjacent blocks may cover the first candidate. Consider
+  // exposed vertical faces within the local recovery radius, not just
+  // the block containing the camera.
+  const verticalEnd=new T.Vector3(a.x,a.y+(soil?24:4),a.z);
+  for(const box of boxes)if(cameraBoxEntry(a,verticalEnd,box,radius)!==Infinity)add(new T.Vector3(a.x,box.y+box.h+margin,a.z));
+  if(prior&&(!soil||prior.y>=a.y-EPS))add(prior);
+  candidates.sort((p,q)=>{
+   if(soil){const vertical=v=>Math.hypot(v.x-a.x,v.z-a.z)<EPS?0:1;return vertical(p)-vertical(q)||p.distanceToSquared(a)-q.distanceToSquared(a)}
+   if(prior)return p.distanceToSquared(prior)-q.distanceToSquared(prior)||p.distanceToSquared(a)-q.distanceToSquared(a);
+   // With no trustworthy previous side, a horizontal/downward input
+   // must not default to dropping the camera below the floor.
+   if(delta.y<=EPS){const lower=v=>v.y<a.y-EPS?1:0;const order=lower(p)-lower(q);if(order)return order}
+   return p.distanceToSquared(a)-q.distanceToSquared(a);
+  });
   if(candidates.length)a.copy(candidates[0]);
-  else {const target=a.clone().add(delta);if(clearPoint(target,boxes,radius))return {x:target.x,y:target.y,z:target.z};return {...from}}
+  else {const target=a.clone().add(delta);if((!soil||target.y>=a.y)&&clearPoint(target,boxes,radius))return commit(target);return {...from}}
  }
- // Sweep each axis in short increments so a wall stops only the blocked
- // component, rather than freezing all motion when the camera grazes a corner.
+ // Sweep each axis in short increments; keep the free components and
+ // never permit a vertical input to descend along the seam of two solids.
  const count=Math.max(1,Math.ceil(delta.length()/.25)),step=delta.clone().multiplyScalar(1/count);
  for(let i=0;i<count;i++)for(const axis of ['x','z','y']){if(Math.abs(step[axis])<EPS)continue;const end=a.clone();end[axis]+=step[axis];a.lerp(end,clipFraction(a,end,boxes,radius,true))}
- return {x:a.x,y:a.y,z:a.z};
+ return commit(a);
 }
 export function perspectiveCamera(map,actor,width,height,{liquids=null}={}){
  const c=map.camera,angle=Number.isFinite(c.angle)?c.angle:0,tilt=Number.isFinite(c.tilt)?c.tilt:.5,axes=cameraAxes(angle,c.mode==='third'?W.clamp(tilt,.08,.96):tilt),camera=new T.PerspectiveCamera(c.mode==='first'?78:c.mode==='fly'?75:48,width/Math.max(1,height),.05,180);
