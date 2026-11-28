@@ -62,18 +62,25 @@ export function selectLocalLights(sources,anchor,viewer,previous=[],limit=8){
 
 // Direct illumination and cube shadows have independent budgets.
 export const POINT_LIGHT_LIMIT=8;
+export const SHADOW_OWNER_HYSTERESIS=8;
 export const lightSourceId=s=>s.sourceId??(s.owner!=null?'object:'+s.owner:[s.x,s.y,s.z,s.secondary,s.color].join('|'));
 export function selectRenderLights(sources,anchor,viewer,previous=[],shadowLimit=4,limit=POINT_LIGHT_LIMIT,visible=()=>true){
  const valid=s=>s&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0&&s.radius>0;
  const prior=new Set(previous.filter(Boolean).map(lightSourceId)),priorShadow=new Set(previous.slice(0,shadowLimit).filter(Boolean).map(lightSourceId));
  const distance=s=>Math.hypot(s.x-viewer.x,s.y-viewer.y,Number.isFinite(viewer.z)?(s.z??.85)-viewer.z:0);
- const score=(s,old)=>distance(s)-(s.radius||0)-(old.has(lightSourceId(s))?2:0)+Number(!!s.secondary)*4;
+ const score=(s,old,retention=2)=>distance(s)-(s.radius||0)-(old.has(lightSourceId(s))?retention:0)+Number(!!s.secondary)*4;
  const compare=(a,b)=>a.score-b.score||a.tie.localeCompare(b.tie);
  const chosen=[],ids=new Set(),add=s=>{if(s&&!ids.has(lightSourceId(s))){chosen.push(s);ids.add(lightSourceId(s))}};
  if(limit<=0)return [];
  const n=Math.min(shadowLimit,limit);
- if(n>0)add(selectSceneLights(sources.filter(valid),anchor,1)[0]);
- for(const s of topLights(sources,n-chosen.length,s=>valid(s)&&!ids.has(lightSourceId(s)),s=>score(s,priorShadow),lightSourceId,compare))add(s);
+ if(n>0){
+  const next=selectSceneLights(sources.filter(valid),anchor,1)[0],old=previous[0],retained=old&&sources.find(s=>valid(s)&&lightSourceId(s)===lightSourceId(old));
+  const anchorScore=s=>Math.hypot(s.x-anchor.x,s.y-anchor.y)-Math.min(8,s.radius||0)*.5-Math.min(2,s.power||0);
+  // Keep the anchor's shadow on small score changes at sector boundaries.
+  // Never retain a missing source or a secondary over a primary source.
+  add(retained&&next&&!!retained.secondary===!!next.secondary&&anchorScore(retained)<=anchorScore(next)+SHADOW_OWNER_HYSTERESIS?retained:next);
+ }
+ for(const s of topLights(sources,n-chosen.length,s=>valid(s)&&!ids.has(lightSourceId(s)),s=>score(s,priorShadow,SHADOW_OWNER_HYSTERESIS),lightSourceId,compare))add(s);
  for(const s of topLights(sources,limit-chosen.length,s=>valid(s)&&!ids.has(lightSourceId(s)),s=>score(s,prior)+(visible(s)?0:16),lightSourceId,compare))add(s);
  const stable=(list,offset)=>{
   const byId=new Map(list.map(s=>[lightSourceId(s),s])),out=Array(list.length).fill(null);
@@ -85,8 +92,10 @@ export function selectRenderLights(sources,anchor,viewer,previous=[],shadowLimit
 }
 
 // A distant native light keeps its illumination, but its cube shadow
-// atlas can be smaller. Hysteresis avoids allocation churn on a boundary.
-export function pointShadowResolution(distance,previous=256){return previous===128?(distance<28?256:128):(distance>36?128:256)}
+// atlas can be smaller. Preserve full quality across the normal 80-cell
+// resident radius, and use a wide hysteresis band to avoid visible pumping.
+export const POINT_SHADOW_NEAR=96,POINT_SHADOW_FAR=128;
+export function pointShadowResolution(distance,previous=256){return previous===128?(distance<POINT_SHADOW_NEAR?256:128):(distance>POINT_SHADOW_FAR?128:256)}
 
 // Keep the original shadow resolutions and light budgets. Only refresh
 // shadow maps whose light volume intersects changed caster bounds.
