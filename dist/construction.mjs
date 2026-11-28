@@ -1,5 +1,5 @@
 import * as W from './world.mjs';
-import {previewConnectionData} from './connected-blocks.mjs';
+import {previewConnectionData,rebuildConnections} from './connected-blocks.mjs';
 import {formAllowed,isForm,orientForm,formInfo,hasBlockForm,formsOverlap,connectionEligible,isConnectedForm,isSpatialForm} from './block-forms.mjs';
 import * as V from './blocks.mjs';
 import {applyLiquidStyle,liquidPresetName} from './liquid-style.mjs';
@@ -17,7 +17,28 @@ export function defaultSlots(){return[
  {kind:'object',type:'light',yaw:0,step:1},
  {kind:'selection',name:'Sélection de zone'}
 ]}
-export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];return world.builder}
+const TREE_EXAMPLES=[
+ ['small','Arbre sec simple','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,1],[0,0,3,2],[0,0,4,5],[1,0,2,2],[2,0,2,3],[2,0,3,5],[-1,0,3,3],[-1,0,4,5]]],
+ ['fork','Arbre fourchu','birchwood',[[0,0,0,1],[0,0,1,1],[0,0,2,1],[-1,0,2,2],[-1,0,3,2],[-1,0,4,3],[-2,0,4,4],[-2,0,5,5],[1,0,2,2],[1,0,3,2],[1,0,4,3],[2,0,4,4],[2,0,5,5],[1,1,3,4],[1,1,4,5]]],
+ ['tall','Grand arbre mort','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,0],[0,0,3,0],[0,0,4,1],[0,0,5,2],[0,0,6,3],[0,0,7,5],[1,0,3,2],[2,0,3,2],[3,0,3,3],[3,0,4,4],[3,0,5,5],[2,1,3,4],[2,2,3,5],[-1,0,4,2],[-2,0,4,3],[-2,0,5,4],[-3,0,5,5],[0,-1,5,3],[0,-2,5,4],[0,-2,6,5]]],
+ ['stump','Souche et racines','oak',[[0,0,0,0],[0,0,1,0],[1,0,0,2],[2,0,0,3],[3,0,0,5],[-1,0,0,2],[-2,0,0,5],[0,1,0,2],[0,2,0,4],[1,2,0,5],[0,-1,0,3],[0,-2,0,5]]],
+ ['lean','Tronc sinueux','pinewood',[[0,0,0,1],[0,0,1,1],[1,0,1,2],[1,0,2,2],[1,0,3,2],[2,0,3,3],[2,0,4,3],[3,0,4,4],[3,0,5,5],[1,-1,2,3],[1,-2,2,5]]],
+ ['crown','Arbre sec ramifié','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,0],[0,0,3,1],[0,0,4,2],[0,0,5,5],[1,0,2,2],[2,0,2,2],[2,0,3,3],[3,0,3,4],[3,0,4,5],[2,1,2,3],[2,2,2,5],[-1,0,2,2],[-2,0,2,3],[-2,0,3,4],[-2,0,4,5],[0,1,3,2],[0,2,3,3],[0,2,4,4],[1,2,4,5],[0,-1,3,2],[0,-2,3,3],[0,-2,4,5]]]
+];
+const TREE_FORMS=['trunk-connected','pillar-connected','branch-connected','pillar-thin-connected','rod-connected','spike-connected'];
+export function ensureTreeExamples(world){
+ world.schematics??=[];if(world.builtinTreeSchemasRevision>=1)return;
+ const ids=new Set(world.schematics.map(s=>s.id));
+ for(const [key,name,material,cells]of TREE_EXAMPLES){
+  const id='builtin-tree-'+key;if(ids.has(id))continue;
+  const minX=Math.min(...cells.map(c=>c[0])),minY=Math.min(...cells.map(c=>c[1]));
+  const objects=cells.map(([x,y,z,t],i)=>({...blockObject(material,x-minX,y-minY,z,1,1,1,0,id+'-'+i),blockForm:TREE_FORMS[t],formConnect:true,formFlip:false,formMirror:false}));
+  rebuildConnections({objects,groups:[]});
+  world.schematics.push({id,name,w:Math.max(...objects.map(o=>o.x))+1,d:Math.max(...objects.map(o=>o.y))+1,h:Math.max(...objects.map(o=>o.baseZ))+1,objects,createdAt:0,builtin:true});
+ }
+ world.builtinTreeSchemasRevision=1;
+}
+export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];ensureTreeExamples(world);return world.builder}
 export function itemName(item,world){if(!item)return'Vide';if(formAllowed(item)&&isForm(item.shape))return (W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(item.shape).name;if(item.kind==='block')return liquidPresetName(item.material,item.liquidStyle)||(item.liquidStyle?((W.BLOCKS[item.material]?.name||'Bloc')+' personnalisée'):(W.BLOCKS[item.material]?.name||'Bloc'));if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}
 export function dimensions(item){const n=(v,f,max)=>Number.isFinite(+v)?W.clamp(snap(+v),.1,max):f;return{w:n(item.w,1,32),d:n(item.d,1,32),h:n(item.h,1,32)}}
 export function blockObject(material,x,y,z,w,d,h,yaw,id){return{...W.newObject('block',x,y,id),name:W.BLOCKS[material]?.name||'Bloc',material,w,d,height:h,baseZ:snap(z),facing:yaw,group:null,blocking:W.BLOCKS[material]?.solid!==false,blocksSight:!!W.BLOCKS[material]?.opaque,shadow:true,frameCount:1,frames:{},...(W.BLOCKS[material]?.emissive?{light:{radius:5,power:1,color:W.BLOCKS[material].accent||W.BLOCKS[material].top}}:{})}}
@@ -110,13 +131,18 @@ export function captureSchema(map,zone,name,id,includeActors=false){
 }
 export function schemaPlacement(schema,at,yaw,id){
  if(!schema)return[];
- const px=snap(at.x),py=snap(at.y),pz=snap(at.z);
- return schema.objects.map(source=>{
+ const spatial=schema.objects.some(o=>isSpatialForm(o.blockForm)),quarter=Math.PI/2,angle=spatial?Math.round(yaw/quarter)*quarter:yaw;
+ yaw=angle;
+ const swap=spatial&&Math.abs(Math.round(angle/quarter)%2)===1;
+ const width=swap?schema.d:schema.w,depth=swap?schema.w:schema.d;
+ const px=spatial?Math.round(at.x-width/2)+width/2:snap(at.x),py=spatial?Math.round(at.y-depth/2)+depth/2:snap(at.y),pz=snap(at.z);
+ const parts=schema.objects.map(source=>{
   let o=structuredClone(source),c=W.center(o),relative=rotate(c.x-schema.w/2,c.y-schema.d/2,yaw);o.id=id();o.x=px+relative.x-(o.w||1)/2;o.y=py+relative.y-(o.d||1)/2;
   if(W.isSegment(o)){const a=rotate(source.x-schema.w/2,source.y-schema.d/2,yaw),b=rotate(source.x2-schema.w/2,source.y2-schema.d/2,yaw);o.x=px+a.x;o.y=py+a.y;o.x2=px+b.x;o.y2=py+b.y}
   o.facing=(source.facing||0)+yaw;o.baseZ=snap(pz+(source.baseZ||0));if(W.character(o))o.voxelZ=o.baseZ;
   if(o.mountNormal){const n=rotate(o.mountNormal.x,o.mountNormal.y,yaw);o.mountNormal={...o.mountNormal,...n}}
-  o.locked=false;o.group=null;return o;
+  o.locked=false;o.group=null;if(spatial){o.x=snap(o.x);o.y=snap(o.y)}return o;
  });
+ if(spatial)rebuildConnections({objects:parts,groups:[]});return parts;
 }
 export function groupZone(map,zone,name,id,includeActors=false){const parts=zoneContents(map,zone,includeActors);if(!parts.objects.length&&!parts.voxels.length)throw Error('Aucun élément entièrement inclus dans la zone.');map.groups.push({id,name:name||'Zone regroupée',color:'#85baa1',visible:true,locked:false,kind:'zone'});for(const o of parts.objects)o.group=id;map.blockGroups??={};for(const b of parts.voxels)map.blockGroups[b.x+','+b.y+','+b.z]=id;map.buildRevision=(map.buildRevision||0)+1;return parts.objects.length+parts.voxels.length}

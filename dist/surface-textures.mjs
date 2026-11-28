@@ -76,6 +76,7 @@ varying vec3 brumesSurfacePosition;
 varying vec3 brumesSurfaceNormal;
 varying vec3 brumesSurfaceWorld;
 varying vec3 brumesSurfaceRelative;
+varying vec2 brumesSurfaceUv;
 varying float brumesSurfaceFaceV;
 varying float brumesSurfaceHeight;
 `;
@@ -90,6 +91,7 @@ brumesSurfaceRelative=transformed*brumesSurfaceScale;
 brumesSurfacePosition=brumesSurfaceRelative+brumesSurfaceMatrix[3].xyz;
 brumesSurfaceWorld=(brumesSurfaceMatrix*vec4(transformed,1.0)).xyz;
 brumesSurfaceNormal=normal;
+brumesSurfaceUv=uv;
 brumesSurfaceFaceV=uv.y;
 brumesSurfaceHeight=brumesSurfaceScale.y;
 `;
@@ -99,6 +101,7 @@ varying vec3 brumesSurfacePosition;
 varying vec3 brumesSurfaceNormal;
 varying vec3 brumesSurfaceWorld;
 varying vec3 brumesSurfaceRelative;
+varying vec2 brumesSurfaceUv;
 varying float brumesSurfaceFaceV;
 varying float brumesSurfaceHeight;
 uniform float brumesSurfaceScale;
@@ -151,7 +154,7 @@ float brumesDetail(vec3 color){
 function shaderMapBody(spec){
  let body=`
 #ifdef USE_MAP
- vec2 brumesUV=${spec.projection==='ground'?'brumesSurfaceWorld.xz':'brumesProjectedUv()'}*brumesSurfaceScale;
+ vec2 brumesUV=${spec.projection==='ground'?'brumesSurfaceWorld.xz':spec.projection==='uv'?'brumesSurfaceUv':'brumesProjectedUv()'}*brumesSurfaceScale;
  vec4 brumesColor;
  float brumesDetailMode=brumesSurfaceDetail;
 `;
@@ -164,7 +167,7 @@ function shaderMapBody(spec){
 `;
  }else body+='brumesColor=brumesSurfaceSample(map,brumesUV,brumesSurfaceNatural);\n';
  if(spec.endGrain)body+=`
- float brumesRadius=length(brumesSurfaceRelative.xz+vec2(0.07,-0.05));
+ float brumesRadius=length(${spec.projection==='uv'?'brumesSurfaceUv':'brumesSurfaceRelative.xz'}+vec2(0.07,-0.05));
  float brumesRing=0.5+0.5*sin(brumesRadius*91.0+sin(brumesSurfaceRelative.x*18.0)*0.7);
  brumesColor.rgb*=mix(0.66,1.1,smoothstep(0.08,0.38,brumesRing));
 `;
