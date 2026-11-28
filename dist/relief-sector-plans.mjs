@@ -97,7 +97,8 @@ export function createReliefSectorPlans(){
   state={map,epoch,blockRevision,buildRevision,context,entries,objectSectors,specialGroups};
   return {groups:new Map(specialGroups),plans,earth:new Map([...entries].filter(([,e])=>e.earth.length).map(([k,e])=>[k,e.earth]))};
  }
- function build(...args){const job=prepare(...args);return finish(job,job.pending.map(({key,src})=>({key,entry:buildReliefSector(src,job.args)})))}
+ function buildPrepared(job){return finish(job,job.pending.map(({key,src})=>({key,entry:buildReliefSector(src,job.args)})))}
+ function build(...args){return buildPrepared(prepare(...args))}
  // A deletion transaction has already verified fixed placed-block elevations.
  // Send only dirty columns, their metadata, the neighboring face membership
  // and local ground samples. Never clone the whole world or global unit set.
@@ -122,5 +123,5 @@ export function createReliefSectorPlans(){
   }
   return {map:snapshot,region:region?{chunks:[...region.chunks]}:null,origin,size,cut,slice,mode,large,imageIds:[...imageIds],tasks};
  }
- return {build,prepare,finish,workerPayload,reset(){state=null},stats:()=>({reliefSectorBuilds:builds,reliefSectorHits:hits})};
+ return {build,buildPrepared,prepare,finish,workerPayload,reset(){state=null},stats:()=>({reliefSectorBuilds:builds,reliefSectorHits:hits})};
 }

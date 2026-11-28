@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import * as W from '../dist/world.mjs';
+import {blockObject} from '../dist/construction.mjs';
+import {buildBlockOcclusion,createChunkOcclusionCache} from '../dist/block-occlusion.mjs';
+import {fixture} from '../test-support/three-fixture.mjs';
+const map=W.newMap('place','Local lamp placement',160,96);W.prepareBlocks(map);map.lighting.bounce=false;
+for(let x=20;x<128;x++)for(let y=28;y<38;y++)for(let z=0;z<3;z++)W.setBlock(map,x,y,z,'stone');
+W.digGround(map,100,50,.5);
+map.objects.push(blockObject('stone',45.5,31,3,2,1,.5,0,'partial'));
+const c=createChunkOcclusionCache();let epoch=1;
+const check=()=>assert.deepEqual(c.collect(map,{epoch}),buildBlockOcclusion(map),'incremental placement matches full occlusion');
+check();const original=c.stats();
+function add(o){
+ const token=c.beginRemoval(map,epoch);assert(token);
+ map.objects.push(o);map.buildRevision=(map.buildRevision||0)+1;epoch++;
+ assert(c.finishPlacement(map,epoch,token,[o]));check();
+}
+add(blockObject('glowstone',31,32,3,1,1,1,0,'edge'));
+add(blockObject('glowstone',47.2,32,3,1,1,.5,0,'partial-light'));
+add(blockObject('glowstone',63,40,2,1,1,1,.3,'rotated'));
+add(blockObject('glowstone',12,60,2,1,1,1,0,'new-sector'));
+assert.equal(c.stats().occlusionIndexBuilds,original.occlusionIndexBuilds);assert.equal(c.stats().occlusionPlacementUpdates,4);assert(c.stats().occlusionChunkHits>original.occlusionChunkHits);
+const token=c.beginRemoval(map,epoch);const removed=map.objects.pop();map.buildRevision++;epoch++;assert(c.finishRemoval(map,epoch,token,{voxels:[],objects:[removed.id],ground:0}));check();
+add(blockObject('glowstone',12,60,2,1,1,1,0,'reinsert'));check();
+const bad=c.beginRemoval(map,epoch);W.setBlock(map,25,32,3,'stone');map.buildRevision++;epoch++;assert(!c.finishPlacement(map,epoch,bad,[]));check();
+Object.assign(map.camera,{mode:'fly',fly:{x:76,y:12,z:36},angle:0});
+const {r}=fixture(undefined,{reliefWorkerFactory:()=>null}),opts={map,mode:'mj',building:true,selection:null,images:new Map(),lights:W.buildLights(map),vision:new Set(),explored:new Set(),terrainEpoch:epoch,path:[]};
+const snapshot=renderer=>renderer.debug().reliefGroup.children.filter(m=>m.userData.reliefBatch&&!m.userData.cutOverlay).sort((a,b)=>a.userData.reliefBatch.localeCompare(b.userData.reliefBatch)).map(m=>[m.userData.reliefBatch,m.count,Array.from(m.instanceMatrix.array.slice(0,m.count*16)),m.userData.blocks.map(b=>[b.id??null,b.x,b.y,b.z,b.h])]);
+r.render(opts);const before=r.stats(),ground=r.debug().groundBatch;
+const lamp=blockObject('glowstone',80,33,3,1,1,1,0,'placed-lamp'),pt=r.beginPlacementEdit(map,opts.terrainEpoch);assert(pt);
+map.objects.push(lamp);map.buildRevision++;opts.terrainEpoch++;opts.lights=W.buildLights(map);
+assert(r.finishPlacementEdit(map,opts.terrainEpoch,pt,[lamp]));r.render(opts);
+const after=r.stats();assert.equal(after.occlusionIndexBuilds,before.occlusionIndexBuilds);assert(after.reliefSectorHits>before.reliefSectorHits);assert(after.reliefSectorBuilds-before.reliefSectorBuilds<before.reliefSectorBuilds);assert.equal(r.debug().groundBatch,ground);assert.equal(after.terrainBuilds,before.terrainBuilds);
+const {r:fresh}=fixture();fresh.render(opts);assert.deepEqual(snapshot(r),snapshot(fresh),'placement geometry is immediately identical to full reconstruction');assert.equal(after.pointIllumination+after.spatialLightSources,fresh.stats().pointIllumination+fresh.stats().spatialLightSources);
+fresh.dispose();r.dispose();console.log('PASS: local light block placement, sector boundaries, partial/rotated objects, removal and reinsert, exact geometry and unchanged ground.');

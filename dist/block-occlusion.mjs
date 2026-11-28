@@ -74,7 +74,20 @@ function prepareBlockOcclusion(map,{region=null,slice=32,mode='mj',columns=Objec
      }
   }
  }
- return {boxes,unitOwners,hidden,remove};
+ // A known append can reuse the existing occupancy grids. If the first
+ // partial target needs the full broad phase, fall back to a fresh index.
+ function canInsert(b){return needsGrid||!!b.unit||!b.canHide}
+ function insert(b){
+  if(b.unitKey!==undefined)append(unitOwners,b.unitKey,b);
+  if(b.opaque&&(needsGrid||!b.unit)){
+   for(let x=Math.floor(b.min[0]/BUCKET);x<=Math.floor((b.max[0]-EPS)/BUCKET);x++)
+    for(let y=Math.floor(b.min[1]/BUCKET);y<=Math.floor((b.max[1]-EPS)/BUCKET);y++)
+     for(let z=Math.floor(b.min[2]/BUCKET);z<=Math.floor((b.max[2]-EPS)/BUCKET);z++){
+      const k=key(x,y,z);if(needsGrid)append(grid,k,b);if(!b.unit)append(partialGrid,k,b);
+     }
+  }
+ }
+ return {boxes,unitOwners,hidden,remove,canInsert,insert};
 }
 // Reference implementation for callers and exact-parity tests.
 export function buildBlockOcclusion(map,options={}){
@@ -89,7 +102,7 @@ function forSectors(x0,y0,x1,y1,fn){
 // The one-cell halo includes all possible adjacent unit faces; arbitrary
 // placed volumes are indexed into every sector that their bounds overlap.
 export function createChunkOcclusionCache(){
- let state=null,activeSectors=new Map(),indexBuilds=0,chunkBuilds=0,chunkHits=0,removalUpdates=0,removedBoxes=0,invalidatedChunks=0;
+ let state=null,activeSectors=new Map(),indexBuilds=0,chunkBuilds=0,chunkHits=0,removalUpdates=0,removedBoxes=0,invalidatedChunks=0,placementUpdates=0,addedBoxes=0;
  const context=map=>JSON.stringify([map.width,map.height,map.groups.map(g=>[g.id,g.visible]),map.chunks.length]);
  const revisionOf=(map,slice,mode,epoch)=>JSON.stringify([map.blockRevision,map.buildRevision,epoch,slice,mode,context(map)]);
  const matches=(s,map,slice,mode,epoch)=>s&&s.map===map&&s.revision===revisionOf(map,slice,mode,epoch)&&s.chunks===map.chunks&&s.blocks===map.blocks&&s.objects===map.objects;
@@ -113,7 +126,7 @@ export function createChunkOcclusionCache(){
   }
   indexBuilds++;
   index.boxes.length=0; // groups own the live boxes; do not retain removed geometry globally
-  return state={map,revision,slice,mode,chunks:map.chunks,blocks:map.blocks,objects:map.objects,index,groups,voxelById,placedById,voxelDependents,placedDependents,fixedElevation:map.objects.every(o=>o.type!=='block'||Number.isFinite(o.baseZ))};
+  return state={map,revision,slice,mode,chunks:map.chunks,blocks:map.blocks,objects:map.objects,index,groups,voxelById,placedById,voxelSectors,placedSpatial,voxelDependents,placedDependents,fixedElevation:map.objects.every(o=>o.type!=='block'||Number.isFinite(o.baseZ))};
  }
  function collect(map,{region=null,objects=map.objects,slice=32,mode='mj',epoch=0}={}){
   const s=prepare(map,slice,mode,epoch),activeObjects=new Set(objects.map(o=>o.id)),activeVoxel=k=>!region||region.chunks.has(k),active=b=>b.voxel?activeVoxel(b.sector):activeObjects.has(b.id);
@@ -168,7 +181,8 @@ export function createChunkOcclusionCache(){
    erase(box,s.voxelDependents.get(box.sector));s.voxelById.delete(id);
   }
   for(const id of changes.objects){
-   erase(s.placedById.get(id),s.placedDependents.get(id));s.placedById.delete(id);
+   const box=s.placedById.get(id);erase(box,s.placedDependents.get(id));s.placedById.delete(id);
+   if(box)forSectors(box.min[0]-EPS,box.min[1]-EPS,box.max[0]+EPS,box.max[1]+EPS,k=>{const list=s.placedSpatial.get(k);if(!list)return;const i=list.indexOf(box);if(i>=0)list.splice(i,1);if(!list.length)s.placedSpatial.delete(k)});
   }
   for(const [g,set]of removedByGroup)g.boxes=g.boxes.filter(b=>!set.has(b));
   for(const g of dirty)g.variants.clear();
@@ -177,5 +191,43 @@ export function createChunkOcclusionCache(){
   s.objects=map.objects;s.revision=revisionOf(map,s.slice,s.mode,epoch);
   removalUpdates++;invalidatedChunks+=dirty.size;if(onDirty){const sectors=new Set();for(const g of dirty)for(const id of g.renderSectors)sectors.add(id);onDirty(sectors)}return true;
  }
- return {collect,beginRemoval,finishRemoval,sectorResults:()=>activeSectors,stats:()=>({occlusionIndexBuilds:indexBuilds,occlusionChunkBuilds:chunkBuilds,occlusionChunkHits:chunkHits,occlusionRemovalUpdates:removalUpdates,occlusionRemovedBoxes:removedBoxes,occlusionInvalidatedChunks:invalidatedChunks}),reset(){state=null;activeSectors=new Map()}};
+ // The construction stroke supplies the exact appended objects. No
+ // voxel/ground/group mutation, dynamic elevation, or unrelated edit is
+ // admitted. Dirty only groups whose dependency membership changed.
+ function finishPlacement(map,epoch,token,added,onDirty){
+  if(!token||token.state!==state||token.map!==map||!Array.isArray(added)||!added.length)return false;
+  const s=state;
+  if(map.objects!==s.objects||map.chunks!==s.chunks||map.blocks!==s.blocks||context(map)!==token.context||
+     epoch!==token.epoch+1||(map.buildRevision||0)!==token.buildRevision+1||
+     (map.blockRevision||0)!==token.blockRevision||map.objects.length!==token.objectCount+added.length||
+     added.some((o,i)=>map.objects[token.objectCount+i]!==o||o.type!=='block'||!Number.isFinite(o.baseZ)||s.placedById.has(o.id)))return false;
+  const boxes=prepareBlockOcclusion(map,{slice:s.slice,mode:s.mode,columns:[],objects:added}).boxes;
+  if(boxes.some(b=>!s.index.canInsert(b)))return false;
+  const dirty=new Set(),sectors=new Set(added.map(o=>sector(o.x+o.w/2,o.y+o.d/2)));
+  for(const box of boxes){
+   s.index.insert(box);s.placedById.set(box.id,box);addedBoxes++;
+   forSectors(box.min[0]-EPS,box.min[1]-EPS,box.max[0]+EPS,box.max[1]+EPS,k=>append(s.placedSpatial,k,box));
+   let g=s.groups.get(box.sector);
+   if(!g)s.groups.set(box.sector,g={boxes:[],min:[Infinity,Infinity],max:[-Infinity,-Infinity],variants:new Map(),renderSectors:new Set(),voxelDeps:[],placedDeps:[]});
+   g.boxes.push(box);g.renderSectors.add(sector((box.min[0]+box.max[0])/2,(box.min[1]+box.max[1])/2));
+   for(let a=0;a<2;a++){g.min[a]=Math.min(g.min[a],box.min[a]);g.max[a]=Math.max(g.max[a],box.max[a])}
+   dirty.add(g);
+  }
+  // The small sector graph may gain an edge to a newly occupied sector.
+  // Its unchanged groups retain their expensive occlusion variants.
+  s.voxelDependents.clear();s.placedDependents.clear();
+  const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+  for(const g of s.groups.values()){
+   const voxels=[],placed=new Set(),x0=g.min[0]-1-EPS,y0=g.min[1]-1-EPS,x1=g.max[0]+1+EPS,y1=g.max[1]+1+EPS;
+   forSectors(x0,y0,x1,y1,k=>{
+    if(s.voxelSectors.has(k))voxels.push(k);
+    for(const box of s.placedSpatial.get(k)||[])if(box.min[0]<=x1&&box.max[0]>=x0&&box.min[1]<=y1&&box.max[1]>=y0)placed.add(box);
+   });
+   const list=[...placed];if(!equal(g.voxelDeps,voxels)||!equal(g.placedDeps,list))dirty.add(g);
+   g.voxelDeps=voxels;g.placedDeps=list;for(const k of voxels)append(s.voxelDependents,k,g);for(const box of list)append(s.placedDependents,box.id,g);
+  }
+  for(const g of dirty){g.variants.clear();for(const id of g.renderSectors)sectors.add(id)}
+  s.revision=revisionOf(map,s.slice,s.mode,epoch);placementUpdates++;invalidatedChunks+=dirty.size;onDirty?.(sectors);return true;
+ }
+ return {collect,beginRemoval,finishRemoval,finishPlacement,sectorResults:()=>activeSectors,stats:()=>({occlusionIndexBuilds:indexBuilds,occlusionChunkBuilds:chunkBuilds,occlusionChunkHits:chunkHits,occlusionRemovalUpdates:removalUpdates,occlusionRemovedBoxes:removedBoxes,occlusionPlacementUpdates:placementUpdates,occlusionAddedBoxes:addedBoxes,occlusionInvalidatedChunks:invalidatedChunks}),reset(){state=null;activeSectors=new Map()}};
 }

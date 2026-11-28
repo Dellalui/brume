@@ -3,8 +3,11 @@
 const chunk=(x,y)=>Math.floor(x/16)+','+Math.floor(y/16);
 export function createReliefStream(){
  let index=null,scope=null;
- return (map,region,epoch,window,W,liquids)=>{
+ return (map,region,epoch,window,W,liquids,edit=null)=>{
   const key=JSON.stringify([map.blockRevision,map.buildRevision,epoch,map.width,map.height,map.chunks.length]);
+  if(index&&edit?.placementOnly&&edit.map===map&&edit.from===index.epoch&&edit.to===epoch&&index.map===map&&index.chunks===map.chunks&&index.blocks===map.blocks&&index.ground===map.ground&&index.objects===map.objects){
+   index.key=key;index.epoch=epoch;index.placed.push(...edit.addedObjects);scope=null;
+  }
   if(!index||index.map!==map||index.key!==key||index.chunks!==map.chunks||index.blocks!==map.blocks||index.ground!==map.ground||index.objects!==map.objects){
    const columns=new Map(),ground=new Map();
    for(const [k,column]of Object.entries(map.blocks||{})){
@@ -15,7 +18,7 @@ export function createReliefStream(){
     const [x,y]=k.split(',').map(Number),id=chunk(x,y);
     if(!ground.has(id))ground.set(id,[]);ground.get(id).push([k,low]);
    }
-   index={map,key,chunks:map.chunks,blocks:map.blocks,ground:map.ground,objects:map.objects,columns,earth:ground,placed:map.objects.filter(o=>o.type==='block')};scope=null;
+   index={map,key,epoch,chunks:map.chunks,blocks:map.blocks,ground:map.ground,objects:map.objects,columns,earth:ground,placed:map.objects.filter(o=>o.type==='block')};scope=null;
   }
   const [x0,y0,x1,y1]=window,windowKey=window.join(',');
   if(scope?.region===region&&scope.windowKey===windowKey&&scope.liquids===liquids)return scope;
