@@ -1,4 +1,5 @@
 import * as W from './world.mjs';
+import {TREE_PROFILES,generateLeaflessTree,treeForm} from './organic-trees.mjs';
 import {previewConnectionData,rebuildConnections} from './connected-blocks.mjs';
 import {formAllowed,isForm,orientForm,formInfo,hasBlockForm,formsOverlap,connectionEligible,isConnectedForm,isSpatialForm} from './block-forms.mjs';
 import * as V from './blocks.mjs';
@@ -17,26 +18,17 @@ export function defaultSlots(){return[
  {kind:'object',type:'light',yaw:0,step:1},
  {kind:'selection',name:'Sélection de zone'}
 ]}
-const TREE_EXAMPLES=[
- ['small','Arbre sec simple','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,1],[0,0,3,2],[0,0,4,5],[1,0,3,2],[2,0,4,3],[3,0,5,5],[-1,0,2,3],[-2,0,3,5]]],
- ['fork','Arbre fourchu','birchwood',[[0,0,0,1],[0,0,1,1],[0,0,2,1],[-1,0,3,2],[-2,0,4,3],[-2,0,5,5],[1,0,3,2],[2,0,4,3],[3,0,5,5],[1,1,3,4],[1,2,4,5]]],
- ['tall','Grand arbre mort','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,0],[0,0,3,0],[0,0,4,1],[0,0,5,2],[0,0,6,3],[0,0,7,5],[1,0,3,2],[2,0,4,2],[3,0,5,3],[4,0,6,5],[2,1,4,4],[2,2,5,5],[-1,0,5,2],[-2,0,6,3],[-3,0,7,5],[0,-1,4,3],[0,-2,5,4],[0,-3,6,5]]],
- ['stump','Souche et racines','oak',[[0,0,0,0],[0,0,1,0],[1,0,0,2],[2,0,0,3],[3,1,0,5],[-1,0,0,2],[-2,-1,0,5],[0,1,0,2],[0,2,0,4],[1,3,0,5],[0,-1,0,3],[0,-2,0,5]]],
- ['lean','Tronc sinueux','pinewood',[[0,0,0,1],[0,0,1,1],[1,0,2,2],[2,0,3,2],[2,0,4,3],[3,0,5,3],[4,0,6,5],[1,-1,3,3],[1,-2,4,5]]],
- ['crown','Arbre sec ramifié','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,0],[0,0,3,1],[0,0,4,2],[0,0,5,5],[1,0,3,2],[2,0,4,2],[3,0,5,3],[4,0,6,5],[2,1,4,3],[2,2,5,5],[-1,0,2,2],[-2,0,3,3],[-3,0,4,4],[-4,0,5,5],[0,1,3,2],[0,2,4,3],[0,3,5,5],[0,-1,3,2],[0,-2,4,3],[1,-3,4,5]]]
-];
-const TREE_FORMS=['trunk-connected','pillar-connected','branch-connected','pillar-thin-connected','rod-connected','spike-connected'];
 export function ensureTreeExamples(world){
- world.schematics??=[];if(world.builtinTreeSchemasRevision>=2)return;
+ world.schematics??=[];if(world.builtinTreeSchemasRevision>=3)return;
  world.schematics=world.schematics.filter(s=>!(s.builtin&&s.id.startsWith('builtin-tree-')));const ids=new Set(world.schematics.map(s=>s.id));
- for(const [key,name,material,cells]of TREE_EXAMPLES){
-  const id='builtin-tree-'+key;if(ids.has(id))continue;
-  const minX=Math.min(...cells.map(c=>c[0])),minY=Math.min(...cells.map(c=>c[1]));
-  const objects=cells.map(([x,y,z,t],i)=>({...blockObject(material,x-minX,y-minY,z,1,1,1,0,id+'-'+i),blockForm:TREE_FORMS[t],formConnect:true,formDiagonal:true,formFlip:false,formMirror:false}));
+ for(const profile of TREE_PROFILES){
+  const id='builtin-tree-'+profile.key;if(ids.has(id))continue;
+  const nodes=generateLeaflessTree(profile),minX=Math.min(...nodes.map(n=>n.pos[0])),minY=Math.min(...nodes.map(n=>n.pos[1]));
+  const objects=nodes.map((n,i)=>({...blockObject(profile.material,n.pos[0]-minX,n.pos[1]-minY,n.pos[2],1,1,1,0,id+'-'+i),blockForm:treeForm(n.radius),formConnect:true,formRadius:n.radius,formOffset:n.offset,formRoot:n.root,formTip:n.tip,formPorts:n.ports,formFlip:false,formMirror:false}));
   rebuildConnections({objects,groups:[]});
-  world.schematics.push({id,name,w:Math.max(...objects.map(o=>o.x))+1,d:Math.max(...objects.map(o=>o.y))+1,h:Math.max(...objects.map(o=>o.baseZ))+1,objects,createdAt:0,builtin:true});
+  world.schematics.push({id,name:profile.name,w:Math.max(...objects.map(o=>o.x))+1,d:Math.max(...objects.map(o=>o.y))+1,h:Math.max(...objects.map(o=>o.baseZ))+1,objects,createdAt:0,builtin:true});
  }
- world.builtinTreeSchemasRevision=2;
+ world.builtinTreeSchemasRevision=3;
 }
 export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];ensureTreeExamples(world);return world.builder}
 export function itemName(item,world){if(!item)return'Vide';if(formAllowed(item)&&isForm(item.shape))return (W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(item.shape).name;if(item.kind==='block')return liquidPresetName(item.material,item.liquidStyle)||(item.liquidStyle?((W.BLOCKS[item.material]?.name||'Bloc')+' personnalisée'):(W.BLOCKS[item.material]?.name||'Bloc'));if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}

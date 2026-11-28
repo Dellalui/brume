@@ -8,7 +8,7 @@ const trunk={...o,blockForm:'trunk-connected',formConnections:17};assert.equal(s
 const world={schematics:[{id:'custom',objects:[]}]};ensureTreeExamples(world);ensureTreeExamples(world);assert.equal(world.schematics.length,7);
 for(const s of world.schematics.slice(1)){
  const seen=new Set([s.objects[0].id]);let changed=true;
- while(changed){changed=false;for(const a of s.objects.filter(a=>seen.has(a.id)))for(const b of s.objects)if(!seen.has(b.id)&&(Math.abs(a.x-b.x)+Math.abs(a.y-b.y)+Math.abs(a.baseZ-b.baseZ)===1||a.formDiagonalLinks?.some(d=>d[0]===b.x-a.x&&d[1]===b.y-a.y&&d[2]===b.baseZ-a.baseZ))){seen.add(b.id);changed=true}}
+ while(changed){changed=false;for(const a of s.objects.filter(a=>seen.has(a.id)))for(const b of s.objects)if(!seen.has(b.id)&&(Math.abs(a.x-b.x)+Math.abs(a.y-b.y)+Math.abs(a.baseZ-b.baseZ)===1||a.formOrganicLinks?.some(d=>d[0]===b.x-a.x&&d[1]===b.y-a.y&&d[2]===b.baseZ-a.baseZ))){seen.add(b.id);changed=true}}
  assert.equal(seen.size,s.objects.length,s.name+' disconnected');
  for(const angle of [0,Math.PI/4,Math.PI/2,Math.PI,Math.PI*1.5]){
  let n=0;const parts=schemaPlacement(s,{x:20.2,y:20.7,z:0},angle,()=>String(++n));assert(parts.every(p=>Number.isInteger(p.x)&&Number.isInteger(p.y)&&(p.formConnections>0||p.formDiagonalLinks?.length>0)));

@@ -1,5 +1,5 @@
 import * as W from './world.mjs';
-const FIELDS=['id','type','x','y','x2','y2','w','d','height','scale','facing','level','baseZ','offsetZ','voxelZ','travelZ','surface','blocking','open','occupancy','underClearance','bodyHeight','trunkRadius','material','blocksSight','rise','blockForm','formFlip','formMirror','formConnect','formConnections','formConnectionSizes','formDiagonal','formDiagonalLinks'];
+const FIELDS=['id','type','x','y','x2','y2','w','d','height','scale','facing','level','baseZ','offsetZ','voxelZ','travelZ','surface','blocking','open','occupancy','underClearance','bodyHeight','trunkRadius','material','blocksSight','rise','blockForm','formFlip','formMirror','formConnect','formConnections','formConnectionSizes','formDiagonal','formDiagonalLinks','formRadius','formOffset','formRoot','formTip','formPorts','formOrganicLinks'];
 const DICTS=['blocks','blockHeights','ground','terrain'];
 export function collisionObject(o){return Object.fromEntries(FIELDS.filter(k=>o[k]!==undefined).map(k=>[k,o[k]]))}
 const encode=v=>JSON.stringify(v);

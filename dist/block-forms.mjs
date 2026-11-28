@@ -238,13 +238,42 @@ export function orientForm(item,p){
  }
  return out;
 }
-function localParts(o){if(connectionEligible(o)&&Number.isInteger(o.formConnections)){if(isSpatialForm(o.blockForm))return spatialVariant(o.blockForm,o.formConnections&63,(o.formConnectionSizes||0)&262143,o.formDiagonalLinks||[]);return connectedCatalog.get(o.blockForm)[o.formConnections&15]}return catalog.get(hasBlockForm(o)?o.blockForm:'box')||catalog.get('box')}
+const organicCache=new Map();
+function organicParts(o){
+ const radius=Math.max(.013,Math.min(.46,Number(o.formRadius)||.075)),offset=(o.formOffset||[0,0,0]).map(x=>Math.max(-.2,Math.min(.2,Number(x)||0))),center=CENTER.map((x,i)=>x+offset[i]),links=o.formOrganicLinks||[];
+ const cacheKey=JSON.stringify([radius,offset,o.formRoot,o.formTip,links]);
+ if(organicCache.has(cacheKey))return organicCache.get(cacheKey);
+ const parts=[],mix=(a,b,t)=>a.map((x,i)=>x+(b[i]-x)*t);
+ // Every half-branch ends at a shared ring; a short quadratic bend follows
+ // the growth tangent while the center hub closes the junction.
+ function arm(end,r,connected=true){
+  if(norm(sub(end,center))<EPS)return;
+  const mid=mix(center,end,.5),bend=mix(mid,CENTER,.16);
+  const first=obliqueTube(center,bend,radius*.94,(radius+r)/2,true,true),second=obliqueTube(bend,end,(radius+r)/2,r,true,connected);
+  parts.push(first,second);
+ }
+ const hubRadius=radius*.98;
+ // Shift a small rounded hub with the growth center.
+ for(const p of jointHub(hubRadius)){
+  const q=poly(p.vertices.map(v=>v.map((x,i)=>x+offset[i])),p.faces);
+  q.cameraBoxes=p.cameraBoxes.map(b=>b.map((x,i)=>x+offset[i%3]));q.organicHub=true;parts.push(q);
+ }
+ for(const link of links){if(!Array.isArray(link)||link.length<7)continue;const d=link.slice(0,3),off=link.slice(4,7),end=CENTER.map((x,i)=>x+(d[i]+off[i]+offset[i])*.5);arm(end,Math.max(.013,Math.min(radius,link[3])));}
+ if(o.formRoot){parts.push(obliqueTube([center[0],center[1],0],center,Math.min(.49,radius*1.23),radius,false,true))}
+ if(links.length<=1&&!o.formRoot){
+  const d=links[0]?.slice(0,3)||[0,0,-1],v=unit(d)||[0,0,-1],end=center.map((x,i)=>x-v[i]*.38);
+  arm(end,o.formTip==='broken'?radius*.72:o.formTip==='taper'?.003:radius*.20,false);
+ }
+ if(!parts.length)parts.push(...jointHub(radius));
+ organicCache.set(cacheKey,parts);if(organicCache.size>768)organicCache.delete(organicCache.keys().next().value);return parts;
+}
+function localParts(o){if(isSpatialForm(o.blockForm)&&Number.isFinite(o.formRadius))return organicParts(o);if(connectionEligible(o)&&Number.isInteger(o.formConnections)){if(isSpatialForm(o.blockForm))return spatialVariant(o.blockForm,o.formConnections&63,(o.formConnectionSizes||0)&262143,o.formDiagonalLinks||[]);return connectedCatalog.get(o.blockForm)[o.formConnections&15]}return catalog.get(hasBlockForm(o)?o.blockForm:'box')||catalog.get('box')}
 function transformed(o,p,z=0){const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),cx=o.x+w/2,cy=o.y+d/2;return p.vertices.map(([x,y,v])=>{const u=(o.formMirror?.5-x:x-.5)*w,t=(y-.5)*d;return [cx+u*c-t*s,cy+u*s+t*c,z+(o.formFlip?1-v:v)*h]})}
 function worldPolys(o,z=o.baseZ||0){return localParts(o).map(p=>poly(transformed(o,p,z),p.faces))}
 function toLocal(o,x,y,z=0){const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),dx=x-(o.x+w/2),dy=y-(o.y+d/2);return [(dx*c+dy*s)/w+.5,(-dx*s+dy*c)/d+.5,(z-(o.baseZ||0))/h]}
 function clip(p,a,d,lo,hi,strict=false){for(const {n,c} of p.planes){const v=dot(n,d),distance=c-dot(n,a);if(Math.abs(v)<EPS){if(distance<(strict?EPS:-EPS))return null;continue}const t=distance/v;if(v>0)hi=Math.min(hi,t);else lo=Math.max(lo,t);if(hi<lo-EPS)return null}return [lo,hi]}
 export function shapeRayEntry(o,from,d,max=1,base=o.baseZ||0){const a=toLocal({...o,baseZ:base},from.x,from.y,from.z),end=toLocal({...o,baseZ:base},from.x+d.x,from.y+d.y,from.z+d.z);if(o.formFlip){a[2]=1-a[2];end[2]=1-end[2]}if(o.formMirror){a[0]=1-a[0];end[0]=1-end[0]}const v=sub(end,a);let best=Infinity;for(const p of localParts(o)){const t=clip(p,a,v,0,max,false);if(t&&t[1]-t[0]>EPS)best=Math.min(best,t[0]);else if(t&&Math.abs(t[0]-max)<EPS){const longer=clip(p,a,v,0,max+1,false);if(longer&&longer[1]>max+EPS)best=Math.min(best,max)}}return best}
-function localIntervals(p,x,y){const z=p.oblique?p.vertices.map(v=>v[2]):[0,1];return clip(p,[x,y,0],[0,0,1],Math.min(...z),Math.max(...z))}
+function localIntervals(p,x,y){const z=p.oblique||p.organicHub?p.vertices.map(v=>v[2]):[0,1];return clip(p,[x,y,0],[0,0,1],Math.min(...z),Math.max(...z))}
 export function shapeIntervals(o,x,y,base=o.baseZ||0){let [u,v]=toLocal(o,x,y);if(o.formMirror)u=1-u;const h=o.height||1,spans=[];for(const p of localParts(o)){const t=localIntervals(p,u,v);if(!t||t[1]-t[0]<EPS)continue;const [a,b]=o.formFlip?[1-t[1],1-t[0]]:t;spans.push([base+a*h,base+b*h])}spans.sort((a,b)=>a[0]-b[0]);const out=[];for(const s of spans){const prev=out.at(-1);if(prev&&s[0]<=prev[1]+EPS)prev[1]=Math.max(prev[1],s[1]);else out.push(s)}return out}
 // Convex separating-axis test, allowing touching but not overlapping pieces.
 function convexOverlap(a,b){const axes=[...a.planes.map(p=>p.n),...b.planes.map(p=>p.n)];const ea=a.edges.map(([i,j])=>sub(a.vertices[j],a.vertices[i])),eb=b.edges.map(([i,j])=>sub(b.vertices[j],b.vertices[i]));for(const v of ea)for(const w of eb){const n=unit(cross(v,w));if(n)axes.push(n)}for(const n of axes){const aa=a.vertices.map(v=>dot(n,v)),bb=b.vertices.map(v=>dot(n,v));if(Math.max(...aa)<=Math.min(...bb)+1e-5||Math.max(...bb)<=Math.min(...aa)+1e-5)return false}return true}
@@ -262,7 +291,7 @@ function proxyBoxes(p){if(p.cameraBoxes)return p.cameraBoxes;if(p.box)return[p.b
  return boxes;
 }
 const proxies=new Map([...catalog].map(([k,p])=>[k,p.flatMap(proxyBoxes)]));
-export function formCollisionBoxes(o,base=o.baseZ||0){if(!hasBlockForm(o))return[o];const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),cx=o.x+w/2,cy=o.y+d/2;return (connectionEligible(o)&&Number.isInteger(o.formConnections)?localParts(o).flatMap(proxyBoxes):proxies.get(o.blockForm)).map(([x0,y0,z0,x1,y1,z1])=>{let u=(o.formMirror?.5-(x0+x1)/2:(x0+x1)/2-.5)*w,v=((y0+y1)/2-.5)*d,ww=(x1-x0)*w,dd=(y1-y0)*d;return {...o,blockForm:undefined,formFlip:undefined,formMirror:undefined,formConnections:undefined,formConnectionSizes:undefined,formDiagonalLinks:undefined,x:cx+u*c-v*s-ww/2,y:cy+u*s+v*c-dd/2,w:ww,d:dd,baseZ:base+(o.formFlip?1-z1:z0)*h,offsetZ:0,height:(z1-z0)*h}})}
+export function formCollisionBoxes(o,base=o.baseZ||0){if(!hasBlockForm(o))return[o];const w=o.w||1,d=o.d||1,h=o.height||1,a=o.facing||0,c=Math.cos(a),s=Math.sin(a),cx=o.x+w/2,cy=o.y+d/2;return (Number.isFinite(o.formRadius)||connectionEligible(o)&&Number.isInteger(o.formConnections)?localParts(o).flatMap(proxyBoxes):proxies.get(o.blockForm)).map(([x0,y0,z0,x1,y1,z1])=>{let u=(o.formMirror?.5-(x0+x1)/2:(x0+x1)/2-.5)*w,v=((y0+y1)/2-.5)*d,ww=(x1-x0)*w,dd=(y1-y0)*d;return {...o,blockForm:undefined,formFlip:undefined,formMirror:undefined,formConnections:undefined,formConnectionSizes:undefined,formDiagonalLinks:undefined,formRadius:undefined,formOrganicLinks:undefined,x:cx+u*c-v*s-ww/2,y:cy+u*s+v*c-dd/2,w:ww,d:dd,baseZ:base+(o.formFlip?1-z1:z0)*h,offsetZ:0,height:(z1-z0)*h}})}
 export function formGeometry(T,o){
  const groups=[[],[],[],[],[],[]],w=o.w||1,d=o.d||1,h=o.height||1,scale=[w,d,h],mirror=o.formMirror?-1:1,flip=o.formFlip?-1:1;
  for(const p of localParts(o)){
@@ -274,7 +303,7 @@ export function formGeometry(T,o){
    const oblique=p.oblique,ringCap=oblique&&raw.every(i=>Math.floor(i/oblique.n)===Math.floor(raw[0]/oblique.n));
    if(ringCap&&(raw[0]<oblique.n?oblique.omitStart:oblique.omitEnd))continue;
    const cap=oblique?ringCap:tube&&raw.every(i=>Math.abs(p.vertices[i][tube.axis]-p.vertices[raw[0]][tube.axis])<EPS);
-   const mi=tube||oblique?(cap?2:0):n[1]>.25?2:n[1]<-.25?3:0;
+   const mi=p.organicHub?0:tube||oblique?(cap?2:0):n[1]>.25?2:n[1]<-.25?3:0;
    const wrap=tube&&!cap&&raw.some(i=>i%tube.n===0)&&raw.some(i=>i%tube.n===tube.n-1);
    function vertex(i){
     const v=vs[i];
@@ -283,7 +312,7 @@ export function formGeometry(T,o){
      if(cap)return {v,n,uv:[dot(offset,oblique.u),dot(offset,oblique.v)]};
      const seam=f.some(k=>k%oblique.n===0)&&f.some(k=>k%oblique.n===oblique.n-1);
      const radial=oblique.u.map((x,k)=>x*Math.cos(theta)+oblique.v[k]*Math.sin(theta)-oblique.axis[k]*(oblique.r1-oblique.r0)/oblique.length);
-     return {v,n:unit([radial[0]*mirror/w,radial[2]*flip/h,radial[1]/d])||n,uv:[(seam&&j===0?oblique.n:j)/oblique.n*2*Math.PI*RADII[spatialSize(o.blockForm)],dot(offset,oblique.axis)]};
+     return {v,n:unit([radial[0]*mirror/w,radial[2]*flip/h,radial[1]/d])||n,uv:[(seam&&j===0?oblique.n:j)/oblique.n*2*Math.PI*(o.formRadius||RADII[spatialSize(o.blockForm)]),dot(offset,oblique.axis)]};
     }
     if(!tube)return {v,n,uv:Math.abs(n[1])>.5?[v[0]+w/2,v[2]+d/2]:Math.abs(n[0])>Math.abs(n[2])?[v[2]+d/2,v[1]]:[v[0]+w/2,v[1]]};
     const raw=p.vertices[i],[uAxis,vAxis]=tube.other;
