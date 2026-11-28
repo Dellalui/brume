@@ -2,7 +2,7 @@ import {TREE_GENERATOR_PROFILES,normalizeTreeConfig,generateLeaflessTree} from '
 import {treeTypeConfig} from './tree-types.mjs';
 export function mountTreeGenerator(root,{materials,onSave,onEquip,getSaved=()=>[]}){
  const select=root.querySelector('#treeProfile'),material=root.querySelector('#treeMaterial'),canvas=root.querySelector('#treePreview'),status=root.querySelector('#treeReport');
- const fields=['name','seed','height','radius','branches','reach','depth','spread','roots','budget','lean','curvature','taper','droop','tipStyle','variation','twigDensity','dominance','asymmetry','irregularity','flexibility'];
+ const fields=['name','seed','height','radius','branches','reach','depth','spread','roots','budget','lean','curvature','taper','droop','tipStyle','variation','twigDensity','dominance','asymmetry','irregularity','flexibility','rootFlare'];
  const field=k=>root.querySelector('#tree-'+k),adapt=root.querySelector('#treeAdaptCrowns');
  for(const p of TREE_GENERATOR_PROFILES){const o=document.createElement('option');o.value=p.key;o.textContent=p.name;select.append(o)}
  for(const [id,b] of Object.entries(materials)){if(['water','lava','air'].includes(id)||b.solid===false)continue;const o=document.createElement('option');o.value=id;o.textContent=b.name||id;material.append(o)}

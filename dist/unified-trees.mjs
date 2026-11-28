@@ -10,12 +10,12 @@ export function packTreeGraph(nodes){
  return nodes.map(n=>[rounded(n.pos[0]+n.offset[0]-origin[0]),rounded(n.pos[1]+n.offset[1]-origin[1]),rounded(n.pos[2]+n.offset[2]+.5),n.radius,parents.get(n)??-1,n.tip]);
 }
 export function validTreeGraph(graph){
- return Array.isArray(graph)&&graph.length>=2&&graph.length<=96&&graph.every((n,i)=>Array.isArray(n)&&n.length===6&&n.slice(0,4).every(Number.isFinite)&&Math.abs(n[0])<=30&&Math.abs(n[1])<=30&&n[2]>=0&&n[2]<=25&&n[3]>=.013&&n[3]<=.46&&(i===0?n[4]===-1:Number.isInteger(n[4])&&n[4]>=0&&n[4]<i)&&['round','broken','taper'].includes(n[5])&&(i===0||Math.hypot(n[0]-graph[n[4]][0],n[1]-graph[n[4]][1],n[2]-graph[n[4]][2])>.1));
+ return Array.isArray(graph)&&graph.length>=2&&graph.length<=(graph.some(n=>n?.[6]==='root')?120:96)&&graph.every((n,i)=>Array.isArray(n)&&(n.length===6||i>0&&n.length===7&&n[6]==='root')&&n.slice(0,4).every(Number.isFinite)&&Math.abs(n[0])<=30&&Math.abs(n[1])<=30&&n[2]>=(n[6]==='root'?-3.2:0)&&n[2]<=(n[6]==='root'?3.6:25)&&n[3]>=.013&&n[3]<=.46&&(i===0?n[4]===-1:Number.isInteger(n[4])&&n[4]>=0&&n[4]<i)&&['round','broken','taper'].includes(n[5])&&(i===0||Math.hypot(n[0]-graph[n[4]][0],n[1]-graph[n[4]][1],n[2]-graph[n[4]][2])>.1));
 }
 // Shared tip geometry for rendering, growth steering and construction
 // collision. Natural ends close with bark; only a deliberate cut uses end grain.
 export function treeTipEnd(n,p){
- if(n[5]==='broken')return null;
+ if(n[5]==='broken'||n[6]==='root')return null;
  const d=sub(n.slice(0,3),p.slice(0,3)),l=len(d);
  if(l<=EPS)return null;
  const r=n[3],taper=n[5]==='taper',length=taper?clamp(r*3,.055,.38):clamp(r*.85,.035,.15);
@@ -34,14 +34,14 @@ function basis(t){
  const ref=Math.abs(t[0])<.8?[1,0,0]:[0,0,1];
  return unit(sub(ref,mul(t,dot(ref,t))));
 }
-function smoothSamples(points){
+function smoothSamples(points,isRoot=false){
  const out=[];const tangent=i=>{
   const p=points[i].p,a=points[Math.max(0,i-1)].p,b=points[Math.min(points.length-1,i+1)].p;
   if(i===0)return unit(sub(b,p));if(i===points.length-1)return unit(sub(p,a));
   return unit(add(unit(sub(p,a)),unit(sub(b,p))));
  };
  for(let i=0;i<points.length-1;i++){
-  const a=points[i],b=points[i+1],d=len(sub(b.p,a.p)),m0=mul(tangent(i),d*.78),m1=mul(tangent(i+1),d*.78),steps=d>.65?3:2;
+  const a=points[i],b=points[i+1],d=len(sub(b.p,a.p)),m0=mul(tangent(i),d*(isRoot?.30:.78)),m1=mul(tangent(i+1),d*(isRoot?.30:.78)),steps=d>.65?3:2;
   for(let j=0;j<steps;j++){
    const t=j/steps,t2=t*t,t3=t2*t;
    const p=add(add(mul(a.p,2*t3-3*t2+1),mul(m0,t3-2*t2+t)),add(mul(b.p,-2*t3+3*t2),mul(m1,t3-t2)));
@@ -53,7 +53,7 @@ function smoothSamples(points){
 }
 export function unifiedTreeGeometry(T,graph){
  if(!validTreeGraph(graph))throw Error('Structure végétale invalide.');
- const nodes=graph.map((n,i)=>({i,p:[n[0],n[2],n[1]],r:n[3],parent:n[4],tip:n[5],children:[]}));
+ const nodes=graph.map((n,i)=>({i,p:[n[0],n[2],n[1]],r:n[3],parent:n[4],tip:n[5],root:n[6]==='root',children:[]}));
  for(const n of nodes.slice(1))nodes[n.parent].children.push(n);
  const pos=[],normal=[],uv=[],side=[],caps=[],distAt=new Map(),starts=[];
  const vertex=(p,n,u,v)=>{const i=pos.length/3;pos.push(...p);normal.push(...n);uv.push(u,v);return i};
@@ -65,7 +65,7 @@ export function unifiedTreeGeometry(T,graph){
  function continuation(n){
   if(!n.children.length)return null;
   const incoming=n.parent<0?[0,1,0]:unit(sub(n.p,nodes[n.parent].p));
-  return [...n.children].sort((a,b)=>{const score=c=>c.r*(1+.48*dot(incoming,unit(sub(c.p,n.p))))+(n.parent<0&&c.p[1]>n.p[1]+.3?.2:0);return score(b)-score(a)||a.i-b.i})[0];
+  return [...n.children].sort((a,b)=>{if(a.root!==b.root)return a.root?1:-1;const score=c=>c.r*(1+.48*dot(incoming,unit(sub(c.p,n.p))))+(n.parent<0&&c.p[1]>n.p[1]+.3?.2:0);return score(b)-score(a)||a.i-b.i})[0];
  }
  function buildPath(first,parent=null){
   const points=[],forks=[];let n=first;
@@ -81,7 +81,7 @@ export function unifiedTreeGeometry(T,graph){
    const end=[tip.point[0],tip.point[2],tip.point[1]];
    if(len(sub(end,last.p))>EPS)points.push({p:end,r:tip.radius,node:null});
   }
-  const samples=smoothSamples(points),maxR=Math.max(...points.map(p=>p.r)),sides=maxR>.22?12:maxR>.07?10:6,circumference=Math.PI*2*maxR;
+  const rootPath=first.root,samples=smoothSamples(points,rootPath),maxR=Math.max(...points.map(p=>p.r)),sides=maxR>.22?12:maxR>.07?10:6,circumference=Math.PI*2*maxR;
   let distance=parent?(distAt.get(parent.i)||0):0,u=basis(samples[0].t),v=cross(samples[0].t,u),previousRing=null;
   for(let k=0;k<samples.length;k++){
    const q=samples[k],prior=samples[k-1],next=samples[Math.min(samples.length-1,k+1)];
@@ -90,7 +90,7 @@ export function unifiedTreeGeometry(T,graph){
    const projected=sub(u,mul(q.t,dot(u,q.t)));u=len(projected)>EPS?unit(projected):basis(q.t);v=unit(cross(q.t,u));
    const before=prior||q,ds=Math.max(EPS,len(sub(next.p,before.p))),slope=(next.r-before.r)/ds,ring=[];
    for(let j=0;j<=sides;j++){
-    const a=j*Math.PI*2/sides,radial=add(mul(u,Math.cos(a)),mul(v,Math.sin(a))),p=add(q.p,mul(radial,q.r)),nn=unit(sub(radial,mul(q.t,slope)));
+    const a=j*Math.PI*2/sides,radial=add(mul(u,Math.cos(a)),mul(v,Math.sin(a))),p=add(q.p,mul(radial,q.r)),nn=unit(sub(radial,mul(q.t,slope)));if(rootPath){p[1]=q.p[1]+(p[1]-q.p[1])*.78;nn[1]/=.78;const normalized=unit(nn);nn.splice(0,3,...normalized)}
     ring.push(vertex(p,nn,circumference*j/sides,distance));
    }
    if(previousRing)for(let j=0;j<sides;j++){const a=previousRing[j],b=previousRing[j+1],c=ring[j],d=ring[j+1];side.push(a,b,c,b,d,c)}

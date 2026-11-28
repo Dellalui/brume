@@ -1,6 +1,7 @@
 // Deterministic local growth steering. Existing scenery is never mutated
 // by a preview or by planting a new tree.
 import * as W from './world.mjs';
+import {splitTreeRoots,fitTreeRoots} from './tree-roots.mjs';
 import {validTreeGraph,treeExtent,treeTipEnd} from './unified-trees.mjs';
 import {treeConstructionBoxes,boxIntersects} from './tree-construction-collision.mjs';
 const plans=new WeakMap(),lastPlan=new WeakMap(),round=x=>Math.round(x*10000)/10000;
@@ -16,16 +17,17 @@ function obstacleQuery(map,o){
   if(t.id===o.id||t.blocking===false||W.character(t))continue;
   if((t.type==='door'||t.type==='build_door')&&t.open)continue;
   const b=W.bounds(t),tz=W.elevation(t,map);
-  if(b.x>c.x+reach||b.x+b.w<c.x-reach||b.y>c.y+reach||b.y+b.h<c.y-reach||tz+(t.height||1)<z||tz>z+o.height+3)continue;
+  if(b.x>c.x+reach||b.x+b.w<c.x-reach||b.y>c.y+reach||b.y+b.h<c.y-reach||tz+(t.height||1)<z-4||tz>z+o.height+3)continue;
   if(t.type==='tree'){for(const box of treeConstructionBoxes(t,tz))insert(box)}
   else insert({x:b.x,y:b.y,w:b.w,d:b.h,baseZ:tz,height:t.height||1});
  }
- function blocked(b){
-  if(b.baseZ+b.height>32||b.x<0||b.y<0||b.x+b.w>map.width||b.y+b.d>map.height)return true;
+ function blocked(b,objectsOnly=false){
+  if(b.baseZ<-16||b.baseZ+b.height>32||b.x<0||b.y<0||b.x+b.w>map.width||b.y+b.d>map.height)return true;
   const seen=new Set();
   for(let x=Math.floor(b.x/cell);x<=Math.floor((b.x+b.w)/cell);x++)for(let y=Math.floor(b.y/cell);y<=Math.floor((b.y+b.d)/cell);y++)for(const v of bins.get(key(x,y))||[]){if(seen.has(v))continue;seen.add(v);if(boxIntersects(b,v))return true}
   for(let x=Math.floor(b.x);x<Math.ceil(b.x+b.w);x++)for(let y=Math.floor(b.y);y<Math.ceil(b.y+b.d);y++){
    if(!W.activeCell(map,x,y))return true;
+   if(objectsOnly)continue;
    if(b.baseZ<W.groundAt(map,x,y)-.0001)return true;
    for(const [base,material] of Object.entries(map.blocks?.[W.cellKey(x,y)]||{})){
     if(W.BLOCKS[material]?.solid===false)continue;
@@ -127,12 +129,26 @@ function solve(map,o){
  if(!clear(fitted))return fail('Espace insuffisant pour contourner les obstacles.');
  return {tree:fitted,replacements:new Map(),error:''};
 }
+function solveWithRoots(map,o){
+ const split=splitTreeRoots(o.treeGraph);
+ if(!split.paths.length||!validTreeGraph(split.graph))return solve(map,o);
+ const crown=withGraph(o,split.graph),plan=solve(map,crown);
+ if(plan.error)return {...plan,tree:o};
+ const query=obstacleQuery(map,o),graph=fitTreeRoots(map,plan.tree,split.paths,b=>query.blocked(b,true));
+ if(!validTreeGraph(graph))return {...plan,tree:o,error:'Impossible d’adapter les racines à ce relief.'};
+ const fitted=withGraph(plan.tree,graph);
+ // The exact same cached proxies used by construction must remain clear
+ // of other objects. Soil contact was validated separately by the root
+ // centerline planner.
+ if(treeConstructionBoxes(fitted,W.elevation(fitted,map)).some(b=>b.treeRoot&&query.blocked(b,true)))return {...plan,tree:o,error:'Les racines touchent une construction.'};
+ return {...plan,tree:fitted,rootValidated:true};
+}
 export function planTreePlanting(map,o){
  if(!map||!organic(o))return o;
  const c=W.center(o),key=[map.buildRevision||0,map.blockRevision||0,c.x,c.y,o.baseZ,o.facing,o.treeConfig?.adaptCrowns!==false].join(','),prev=lastPlan.get(map);
  let plan=prev?.key===key&&prev.graph===o.treeGraph&&prev.objects===map.objects?prev.plan:null;
- if(!plan){plan=solve(map,o);lastPlan.set(map,{key,graph:o.treeGraph,objects:map.objects,plan})}
- const tree={...o,...plan.tree,id:o.id};plans.set(tree,{replacements:plan.replacements,error:plan.error,adapted:plan.tree.treeGraph!==o.treeGraph});return tree;
+ if(!plan){plan=solveWithRoots(map,o);lastPlan.set(map,{key,graph:o.treeGraph,objects:map.objects,plan})}
+ const tree={...o,...plan.tree,id:o.id};plans.set(tree,{replacements:plan.replacements,error:plan.error,rootValidated:!!plan.rootValidated,adapted:plan.tree.treeGraph!==o.treeGraph});return tree;
 }
 export const treePlantingPlan=o=>plans.get(o);
 export function applyTreePlanting(map,objects){/* Existing trees remain unchanged. */}

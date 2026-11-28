@@ -1,5 +1,5 @@
 import * as W from './world.mjs';
-import {treeConstructionBoxes} from './tree-construction-collision.mjs';
+import {treeConstructionBoxes,boxIntersects} from './tree-construction-collision.mjs';
 import {TREE_PROFILES,generateLeaflessTree,treeForm,normalizeTreeConfig} from './organic-trees.mjs';
 import {packTreeGraph,validTreeGraph,treeExtent,isUnifiedTree} from './unified-trees.mjs';
 import {ensureTreeTypes,treeVariant,plantSequence,treeTypeConfig,makeTreeItem} from './tree-types.mjs';
@@ -121,8 +121,9 @@ export function placementError(map,objects){
   const error=W.placementError(map,o);if(error)return error;
   if(!['block','build_door','tree'].includes(o.type))continue;
   for(const other of map.objects){const effective=plan?.replacements.get(other.id)||other;if(['block','build_door','tree'].includes(effective.type)&&effective.id!==o.id&&overlap(o,effective,map))return effective.type==='tree'||o.type==='tree'?'Un arbre occupe ce volume.':'Ce volume est déjà occupé.';}
+  const checkedTreeBoxes=plan?.rootValidated&&o.type==='tree'?treeConstructionBoxes(o,z).filter(b=>!b.treeRoot):null;
   const b=W.bounds(o);for(let x=Math.max(0,Math.floor(b.x));x<Math.min(map.width,Math.ceil(b.x+b.w));x++)for(let y=Math.max(0,Math.floor(b.y));y<Math.min(map.height,Math.ceil(b.y+b.h));y++)for(const [base,material] of Object.entries(map.blocks?.[W.cellKey(x,y)]||{})){
-   const voxel=blockObject(material,x,y,+base,1,1,W.blockSize(map,x,y,+base),0,'voxel');if(overlap(o,voxel,map))return'Un bloc occupe ce volume.';
+   const voxel=blockObject(material,x,y,+base,1,1,W.blockSize(map,x,y,+base),0,'voxel');if(checkedTreeBoxes?checkedTreeBoxes.some(b=>boxIntersects(b,voxel)):overlap(o,voxel,map))return'Un bloc occupe ce volume.';
   }
  }
  // Validate characters carried by a schematic against its own newly placed structure.
