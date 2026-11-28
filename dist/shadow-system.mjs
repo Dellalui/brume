@@ -63,6 +63,14 @@ export function selectLocalLights(sources,anchor,viewer,previous=[],limit=8){
 // Direct illumination and cube shadows have independent budgets.
 export const POINT_LIGHT_LIMIT=8;
 export const SHADOW_OWNER_HYSTERESIS=8;
+// A moving MJ camera is not a moving lamp. Keep one selection origin for
+// an entire room, including neighboring streaming sectors. A real source
+// edit still forces selection with the latest source data.
+export const LIGHT_SELECTION_HORIZONTAL=32,LIGHT_SELECTION_VERTICAL=16;
+export function stableRenderLightFocus(previous,focus,anchor,mode){
+ if(previous?.mode===mode&&Math.hypot(focus.x-previous.focus.x,focus.y-previous.focus.y)<=LIGHT_SELECTION_HORIZONTAL&&Math.abs((focus.z??0)-(previous.focus.z??0))<=LIGHT_SELECTION_VERTICAL)return previous;
+ return {mode,focus:{...focus},anchor:{...anchor}};
+}
 export const lightSourceId=s=>s.sourceId??(s.owner!=null?'object:'+s.owner:[s.x,s.y,s.z,s.secondary,s.color].join('|'));
 export function selectRenderLights(sources,anchor,viewer,previous=[],shadowLimit=4,limit=POINT_LIGHT_LIMIT,visible=()=>true){
  const valid=s=>s&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&s.power>0&&s.radius>0;

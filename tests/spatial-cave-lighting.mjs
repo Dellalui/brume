@@ -3,7 +3,7 @@ import * as T from '../dist/vendor/three.module.min.js';
 import * as W from '../dist/world.mjs';
 import {DETAIL_LIGHTS,buildSpatialLightGrid,createSpatialLights,injectSpatialLighting} from '../dist/spatial-lights.mjs';
 import {injectEmitterShadow} from '../dist/emitter-shadow.mjs';
-import {pointShadowResolution,selectRenderLights,POINT_SHADOW_NEAR,POINT_SHADOW_FAR} from '../dist/shadow-system.mjs';
+import {pointShadowResolution,selectRenderLights,stableRenderLightFocus,POINT_SHADOW_NEAR,POINT_SHADOW_FAR} from '../dist/shadow-system.mjs';
 import {fixture} from '../test-support/three-fixture.mjs';
 const make=(i,x=i*8,y=10,z=3)=>({sourceId:'l'+i,x,y,z,radius:5,power:1,color:'#ffffff'});
 const scattered=Array.from({length:40},(_,i)=>make(i));
@@ -29,6 +29,13 @@ const anchorNear=selectRenderLights(owners,{x:11,y:0},focus(11),near,2,3);
 assert.equal(anchorNear[0].sourceId,'l0','anchor shadow remains on a small score difference');
 assert.equal(selectRenderLights(owners,{x:18,y:0},focus(18),anchorNear,2,3)[0].sourceId,'l1','large anchor improvement still switches');
 assert(!selectRenderLights(owners.slice(1),anchor,focus(0),near,2,3).some(s=>s.sourceId==='l0'),'removed shadow sources are never retained');
+const initialFocus=stableRenderLightFocus(null,{x:20,y:20,z:3},{x:16,y:16},'fly');
+for(const [x,y,z]of [[30,20,3],[48,20,4],[20,50,3],[20,20,18]]){
+ assert.equal(stableRenderLightFocus(initialFocus,{x,y,z},{x:48,y:48},'fly'),initialFocus,'local movement and streaming anchor changes retain the same lamp selection focus');
+}
+assert.notEqual(stableRenderLightFocus(initialFocus,{x:53,y:20,z:3},{x:48,y:16},'fly'),initialFocus,'travel into another area recenters');
+assert.notEqual(stableRenderLightFocus(initialFocus,{x:20,y:20,z:20},{x:16,y:16},'fly'),initialFocus,'changing floors recenters');
+assert.notEqual(stableRenderLightFocus(initialFocus,{x:20,y:20,z:3},{x:16,y:16},'third'),initialFocus,'camera mode change resets the focus');
 const shader={uniforms:{},vertexShader:T.ShaderLib.standard.vertexShader,fragmentShader:T.ShaderLib.standard.fragmentShader};
 injectSpatialLighting(shader,{});assert(shader.vertexShader.includes('brumeGridWorld ='));assert(shader.fragmentShader.includes('reflectedLight.directDiffuse += brumeGridIrradiance'));
 const shadow={uniforms:{},vertexShader:T.ShaderLib.distanceRGBA.vertexShader,fragmentShader:T.ShaderLib.distanceRGBA.fragmentShader};
@@ -42,5 +49,15 @@ r.render(opts);assert.equal(r.stats().pointIllumination,8);assert.equal(r.stats(
 for(const l of r.debug().pointLights.filter(l=>l.visible)){assert.equal(l.position.y,2.5);assert.equal(l.position.z,20.5);assert.equal(l.position.x%1,.5)}
 const emissive=r.debug().reliefGroup.children.filter(m=>m.userData.reliefBatch?.startsWith('glowstone|'));assert(emissive.length&&emissive.every(m=>m.customDistanceMaterial?.isMeshDistanceMaterial));
 const before=r.stats().spatialLightRebuilds;map.camera.angle+=Math.PI;r.render(opts);assert.equal(r.stats().spatialLightRebuilds,before,'turning does not rebuild lighting grid');
-map.lighting.shadows=false;r.render(opts);assert.equal(r.stats().pointShadows,0);assert.equal(r.stats().pointIllumination+r.stats().spatialLightSources,12);
+const slots=()=>r.debug().pointLights.map(l=>[l.userData.sourceId,l.castShadow]);
+const originalSlots=slots();
+for(const [x,y,z]of [[25,3,30],[35,4,30],[48,3,30],[22,10,32],[20,3,30]]){
+ map.camera.fly={x,y,z};r.render(opts);assert.deepEqual(slots(),originalSlots,'room traversal retains all native slots and shadow owners');assert.equal(r.stats().spatialLightRebuilds,before,'room traversal does not upload a new spatial grid');
+}
+map.camera.fly={x:57,y:3,z:30};r.render(opts);assert.notDeepEqual(slots(),originalSlots,'long travel can choose a new local lighting set');
+const removed=r.debug().pointLights.find(l=>l.castShadow&&l.userData.sourceId.startsWith('voxel:')).userData.sourceId;
+const [rx,ry,rz]=removed.slice(6).split(',').map(Number);W.setBlock(map,rx,ry,rz,null);opts.lights=W.buildLights(map);opts.terrainEpoch++;r.render(opts);
+assert(!slots().some(([id])=>id===removed),'real deletion updates light ownership immediately');
+assert.equal(r.stats().pointIllumination+r.stats().spatialLightSources,11);
+map.lighting.shadows=false;r.render(opts);assert.equal(r.stats().pointShadows,0);assert.equal(r.stats().pointIllumination+r.stats().spatialLightSources,11);
 r.dispose();console.log('PASS: omnidirectional emitter centers, per-instance self-shadow exemption, spatial overflow lighting, distance shadow LOD and stable rotation.');
