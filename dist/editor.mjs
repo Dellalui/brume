@@ -1,4 +1,6 @@
 import {ensureTreeTypes,saveTreeType,makeTreeItem,advanceTreeSequence} from './tree-types.mjs';
+import {applyTreePlanting,treePlantingPlan} from './tree-neighbors.mjs';
+import {rayTreeBox} from './tree-construction-collision.mjs';
 import {aimedDoor,doorAccess} from './door-interaction.mjs';
 import {activationSettings,activationLibrary,chooseActivationRecipe,activationRecipe,blockRef,activationKey,resolveActivationBlock,setActivation,canActivateBlock,createActivationQueue,applyRecoil,passagePose,crossedActivations,activationVisualPoint} from './block-activation.mjs';
 import {MONEY_ICONS,moneyAmount,walletValues,monitorConfig} from './character-ledger.mjs';
@@ -561,7 +563,7 @@ function creativeActive(){return creativeReady&&!aim&&mode==='build'&&viewMode==
  const formSelect=$('#heldShape');formSelect.replaceChildren(...BLOCK_FORMS.map(f=>{const opt=document.createElement('option');opt.value=slotShape(f.id);opt.textContent=f.name;return opt}));
  document.addEventListener('keydown',e=>{if(e.key==='Alt'&&creativeActive()&&!inventoryOpen&&formAllowed(heldItem())){e.preventDefault();if(!e.repeat)blockFormMenu.show()}},{capture:true});
  document.addEventListener('keyup',e=>{if(e.key==='Alt'){if(creativeActive()&&formAllowed(heldItem()))e.preventDefault();blockFormMenu.hide()}},{capture:true});document.addEventListener('pointerlockchange',()=>{if(document.pointerLockElement!==canvas)blockFormMenu.hide()});window.addEventListener('blur',()=>blockFormMenu.hide());
- function withFormAim(p,x,y){if(!formAllowed(heldItem())||!isForm(heldItem().shape))return p;const ray=scene.interactionRay(x,y);return {...p,aimDirection:ray?.direction,formMap:map()}}
+ function withFormAim(p,x,y){if(heldItem()?.kind==='treeType')return {...p,treeMap:map()};if(!formAllowed(heldItem())||!isForm(heldItem().shape))return p;const ray=scene.interactionRay(x,y);return {...p,aimDirection:ray?.direction,formMap:map()}}
 function creativeCoordinates(e=creativeLastEvent){const r=canvas.getBoundingClientRect(),center=document.pointerLockElement===canvas||!e;return{x:center?r.width/2:e.clientX-r.left,y:center?r.height/2:e.clientY-r.top}}
 function creativePoint(e=creativeLastEvent){const {x,y}=creativeCoordinates(e),item=heldItem(),range=item?.kind==='throw'?(throwConfig(item).range||Infinity):(world.builder?.reach||12);return withFormAim(scene.world(x,y,range),x,y)}
 function creativePick(e=creativeLastEvent){const {x,y}=creativeCoordinates(e);return scene.pick(x,y,null,true,world.builder?.reach||12)}
@@ -577,7 +579,7 @@ function inventoryEntries(){
  if(creativeCategory==='blocks'){const entries=Object.entries(W.BLOCKS).filter(([id,b])=>inventoryFamily==='all'||b.category===inventoryFamily).map(([material])=>({kind:'block',material,w:1,d:1,h:1,yaw:0,step:1,shape:'box'}));return entries.flatMap(item=>['water','lava'].includes(item.material)?LIQUID_PRESETS.filter(p=>p.kind===item.material).map(p=>({...item,liquidStyle:normalizeLiquidStyle(p.kind,p)})):[item]);}
  if(creativeCategory==='doors')return Object.keys(C.DOORS).map(variant=>({kind:'door',variant,w:1,d:.15,h:2,yaw:0,step:1}));
  if(creativeCategory==='actors')return['hero','npc','enemy'].map(type=>({kind:'object',type,yaw:0,step:1}));
- if(creativeCategory==='schemas')return world.schematics.map(s=>({kind:'schema',id:s.id,yaw:0,step:.1}));
+ if(creativeCategory==='schemas')return world.schematics.filter(s=>!s.builtin||!s.treeConfig).map(s=>s.treeConfig&&s.objects?.length===1&&s.objects[0].treeGraph?makeTreeItem({...s.treeConfig,name:s.name}):({kind:'schema',id:s.id,yaw:0,step:.1}));
  if(['zone','settings','trees'].includes(creativeCategory))return[];if(creativeCategory==='tools')return CT.TOOL_ITEMS;if(creativeCategory==='throws')return [...THROW_ITEMS,...(world.throwPresets||[]).map(p=>({kind:'throw',preset:'blast',recipeId:p.id,name:p.name,layers:structuredClone(p.layers),power:3,destroy:false,...p.settings}))];if(creativeCategory==='effects')return Object.keys(W.FX).map(k=>({kind:'object',type:'fx_'+k,yaw:0,step:1}));
  const cats=creativeCategory==='natural-decor'?W.CATEGORIES.filter(c=>c.id==='nature'):creativeCategory==='decor-architecture'?W.CATEGORIES.filter(c=>c.id==='architecture'):creativeCategory==='decor-furniture'?W.CATEGORIES.filter(c=>c.id==='furniture'):creativeCategory==='decor-camp'?W.CATEGORIES.filter(c=>c.id==='camp'):creativeCategory==='decor-utilities'?W.CATEGORIES.filter(c=>c.id==='tools'):W.CATEGORIES.filter(c=>c.id!=='nature');const types=[...new Set(cats.flatMap(c=>c.types))].filter(type=>!['wall','door','block','build_door','hero','npc','enemy'].includes(type)&&!type.startsWith('fx_'));
  return types.flatMap(type=>type==='tree'?['oak','pine','birch','willow'].map(variant=>({kind:'object',type,variant,yaw:0,step:1})):[{kind:'object',type,yaw:0,step:1}]);
@@ -586,7 +588,7 @@ let inventoryKey='',treeGenerator=null;
 function filteredInventory(){const q=normalizeSearch(inventoryQuery);return inventoryEntries().filter(item=>normalizeSearch(C.itemName(item,world)+' '+(item.variant||'')).includes(q)).map(canvasItem)}
 function renderInventory(){
  const forms=$('#creativeForms');forms.hidden=!inventoryOpen||!['zone','settings','trees'].includes(creativeCategory);
- $('#creativeSettings').hidden=creativeCategory!=='settings';$('#zoneTools').hidden=creativeCategory!=='zone';$('#treeGenerator').hidden=creativeCategory!=='trees';if(inventoryOpen&&creativeCategory==='trees')treeGenerator??=mountTreeGenerator($('#treeGenerator'),{materials:W.BLOCKS,getSaved:()=>ensureTreeTypes(world),onEquip:config=>{assignSlot(makeTreeItem(config));toast('Type équipé : '+config.name)},onSave:(config,id)=>{remember();const preset=saveTreeType(world,config,id||uid());queueSave();toast('Type enregistré : '+config.name);return preset.id}});
+ $('#creativeSettings').hidden=creativeCategory!=='settings';$('#zoneTools').hidden=creativeCategory!=='zone';$('#treeGenerator').hidden=creativeCategory!=='trees';if(inventoryOpen&&creativeCategory==='trees')treeGenerator??=mountTreeGenerator($('#treeGenerator'),{materials:W.BLOCKS,getSaved:()=>ensureTreeTypes(world),onEquip:config=>{assignSlot(makeTreeItem(config));toggleInventory(false);toast('Type équipé : '+config.name+' · clic droit pour planter')},onSave:(config,id)=>{remember();const preset=saveTreeType(world,config,id||uid());queueSave();toast('Type enregistré : '+config.name);return preset.id}});
  if(inventoryOpen&&creativeCategory==='settings')renderHeldLiquid();
  canvasHUD?.schedule();
 }
@@ -607,8 +609,8 @@ function creativePreview(e){
  if(['brush','fogbrush'].includes(item?.kind)){let p=creativePoint(),box=CT.brushBox(p,item,false);drawBrush=box?{...box,zone:true}:null;schedule();return}if(['frame','pipette'].includes(item?.kind)){drawBrush=null;schedule();return}
  if(item?.kind==='selection'){if(creativeZone)drawBrush={...creativeZone,zone:true};schedule();return}if(item?.kind==='inspect'){drawBrush=null;schedule();return}
  const now=Date.now();if(e&&now-creativePreviewTime<45)return;creativePreviewTime=now;
- const {x,y}=creativeCoordinates(),{point:p,id}=scene.aimAt(x,y,world.builder?.reach||12),targetBox=creativeTargetBox(p,id);let i=0,parts=C.placement(item,withFormAim(p,x,y),world,()=> 'preview-'+i++);if(!parts.length){drawBrush=targetBox?{target:targetBox}:null;schedule();return}
- const error=C.placementError(map(),parts);drawBrush={object:parts[0],companions:parts.slice(1,96),valid:!error};if(targetBox)drawBrush.target=targetBox;if(item.kind==='schema'){const boxes=parts.map(W.bounds),x=Math.min(...boxes.map(b=>b.x)),y=Math.min(...boxes.map(b=>b.y)),z=Math.min(...parts.map(o=>W.elevation(o,map())));drawBrush.volume={x,y,z,w:Math.max(...boxes.map(b=>b.x+b.w))-x,d:Math.max(...boxes.map(b=>b.y+b.h))-y,h:Math.max(...parts.map(o=>W.elevation(o,map())+o.height))-z}}$('#hint').textContent=error||C.itemName(item,world)+' · Clic droit pour poser'+(parts.length>96?' · aperçu limité à 96 éléments':'');schedule();
+ const {x,y}=creativeCoordinates(),{point:p,id}=scene.aimAt(x,y,world.builder?.reach||12),targetBox=item.kind==='treeType'?null:creativeTargetBox(p,id,x,y);let i=0,parts=C.placement(item,withFormAim(p,x,y),world,()=> 'preview-'+i++);if(!parts.length){drawBrush=targetBox?{target:targetBox}:null;schedule();return}
+ const error=C.placementError(map(),parts);drawBrush={object:parts[0],companions:parts.slice(1,96),valid:!error};if(targetBox)drawBrush.target=targetBox;if(item.kind==='schema'){const boxes=parts.map(W.bounds),x=Math.min(...boxes.map(b=>b.x)),y=Math.min(...boxes.map(b=>b.y)),z=Math.min(...parts.map(o=>W.elevation(o,map())));drawBrush.volume={x,y,z,w:Math.max(...boxes.map(b=>b.x+b.w))-x,d:Math.max(...boxes.map(b=>b.y+b.h))-y,h:Math.max(...parts.map(o=>W.elevation(o,map())+o.height))-z}}$('#hint').textContent=error||C.itemName(item,world)+(item.kind==='treeType'?' · Clic droit pour planter'+(treePlantingPlan(parts[0])?.replacements.size?' · couronnes voisines adaptées':''):' · Clic droit pour poser')+(parts.length>96?' · aperçu limité à 96 éléments':'');schedule();
 }
 function updateCreativeZone(p,second=false){
  if(![p.x,p.y,p.z].every(Number.isFinite)||p.x<0||p.y<0||p.x>map().width||p.y>map().height)return;
@@ -672,7 +674,7 @@ function creativeUse(){
   const key=item.kind==='treeType'?'tree:'+Math.floor(p.x)+','+Math.floor(p.y)+','+parts[0].baseZ:parts.map(o=>[o.type,o.x,o.y,o.baseZ,o.facing].join(',')).join(';');if(creativeStroke.seen.has(key))return;creativeStroke.seen.add(key);
   if(item.kind==='schema'){const schema=world.schematics.find(s=>s.id===item.id),id=uid();map().groups.push({id,name:schema.name,color:'#93b7a0',visible:true,locked:false,kind:'schematic',schemaId:schema.id});for(const o of parts)o.group=id;collapsed.add(id)}
   if(item.kind==='block'&&parts.every(o=>o.type==='block'&&Number.isFinite(o.baseZ))){placementToken=scene.beginPlacementEdit(map(),terrainEpoch);placed=parts}
-  map().objects.push(...parts);if(item.kind==='treeType')advanceTreeSequence(world);soundMaterial=parts[0]?.material||soundMaterial;changed=true;
+  if(item.kind==='treeType')applyTreePlanting(map(),parts);map().objects.push(...parts);if(item.kind==='treeType')advanceTreeSequence(world);soundMaterial=parts[0]?.material||soundMaterial;changed=true;
  }
  if(changed){playWorldSound(materialSound(soundMaterial,W.BLOCKS[soundMaterial]?.category,creativeStroke.button===0),p,{range:20,volume:.7});creativeStroke.changed=true;invalidate(placed||removed?{added:placed||[],removed:removed?.objects||[]}:null);settleBlockActors();if(placementToken)scene.finishPlacementEdit(map(),terrainEpoch,placementToken,placed);else if(removalToken)scene.finishRemovalEdit(map(),terrainEpoch,removalToken,removed);creativePreview();}
 }
@@ -708,9 +710,9 @@ function initCreativeWorkbench(){
 
 function placeCreativeFrame(p){if(!p.placedBlock){placeSurface(p);return}const n=p.normal;if(!n)return;let o=W.newObject('image',p.x-.425+n.x*.03,p.y-.425+n.y*.03,uid());Object.assign(o,{name:'Cadre · image à importer',w:.85,d:.85,height:.85,baseZ:p.z+n.z*.03,mountNormal:n,blocking:false,blocksSight:false});change(()=>{map().objects.push(o);selection=o.id});showPanel('inspectorPanel');$('#inspector-tab-appearance')?.click();}
 
-function creativeTargetBox(p,id){
+function creativeTargetBox(p,id,x,y){
  const o=(id?map().objects.find(o=>o.id===id):null)||p.placedBlock;
- if(o){if(W.isSegment(o)){const b=W.bounds(o);return{x:b.x,y:b.y,z:W.elevation(o,map()),w:b.w,d:b.h,h:o.height||1,angle:0}}return{x:o.x,y:o.y,z:W.elevation(o,map()),w:o.w||1,d:o.d||1,h:o.height||1,angle:o.facing||0}}
+ if(o){if(o.type==='tree'){const b=rayTreeBox(o,W.elevation(o,map()),scene.interactionRay(x,y),world.builder?.reach||12);return b?{x:b.x,y:b.y,z:b.baseZ,w:b.w,d:b.d,h:b.height,angle:0}:null}if(W.isSegment(o)){const b=W.bounds(o);return{x:b.x,y:b.y,z:W.elevation(o,map()),w:b.w,d:b.h,h:o.height||1,angle:0}}return{x:o.x,y:o.y,z:W.elevation(o,map()),w:o.w||1,d:o.d||1,h:o.height||1,angle:o.facing||0}}
  const b=CT.targetCell(p);return b&&W.activeCell(map(),b.x,b.y)?{...b,w:1,d:1,h:p.block?W.blockSize(map(),b.x,b.y,b.z):1,angle:0}:null;
 }
 

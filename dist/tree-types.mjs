@@ -6,7 +6,7 @@ import {packTreeGraph,validTreeGraph,treeExtent} from './unified-trees.mjs';
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x)),round=x=>Math.round(x*10000)/10000;
 export function treeTypeConfig(input={}){
  const n=Number(input.variation??12),variation=Number.isFinite(n)?Math.round(clamp(n,0,30)):12;
- return {...normalizeTreeConfig(input),variation};
+ return {...normalizeTreeConfig(input),variation,adaptCrowns:input.adaptCrowns!==false};
 }
 export function ensureTreeTypes(world){
  if(!Array.isArray(world.treeTypes)){
@@ -29,7 +29,7 @@ export function referenceTreeGraph(input){
 function rng(seed){let s=seed>>>0;return()=>{s=(Math.imul(s,1664525)+1013904223)>>>0;return s/4294967296}}
 export function treeVariant(input,sequence=0){
  const c=treeTypeConfig(input),base=referenceTreeGraph(c),seq=(Number(sequence)||0)>>>0;
- if(c.variation===0)return {graph:base,extent:treeExtent(base),seed:c.seed,sequence:seq};
+ if(c.variation===0)return {graph:base,extent:treeExtent(base),seed:c.seed,sequence:seq,rotation:0};
  const key=JSON.stringify([c,seq]);
  return memo(variantCache,key,()=>{
   const seed=(c.seed^Math.imul(seq+1,0x9e3779b9))>>>0,rand=rng(seed),a=c.variation/100,sign=()=>2*rand()-1;
@@ -42,7 +42,7 @@ export function treeVariant(input,sequence=0){
    return [round(xx*co-yy*si),round(xx*si+yy*co),round(clamp(.5+(z-.5)*sz,.02,24.8)),round(clamp(r*rscale*(1+a*.16*Math.sin(z*.6+x*.4+phase)),.013,.46)),parent,tip];
   });
   const safe=validTreeGraph(graph)?graph:base;
-  return {graph:safe,extent:treeExtent(safe),seed,sequence:seq};
+  return {graph:safe,extent:treeExtent(safe),seed,sequence:seq,rotation:sign()*a*Math.PI/.30};
  },24);
 }
 export const plantSequence=world=>(Number(world.builder?.treePlantSequence)||0)>>>0;

@@ -2,7 +2,8 @@ import * as W from './world.mjs';
 import {treeConstructionBoxes} from './tree-construction-collision.mjs';
 import {TREE_PROFILES,generateLeaflessTree,treeForm,normalizeTreeConfig} from './organic-trees.mjs';
 import {packTreeGraph,validTreeGraph,treeExtent,isUnifiedTree} from './unified-trees.mjs';
-import {ensureTreeTypes,treeVariant,plantSequence,treeTypeConfig} from './tree-types.mjs';
+import {ensureTreeTypes,treeVariant,plantSequence,treeTypeConfig,makeTreeItem} from './tree-types.mjs';
+import {planTreePlanting,treePlantingPlan} from './tree-neighbors.mjs';
 import {previewConnectionData,rebuildConnections} from './connected-blocks.mjs';
 import {formAllowed,isForm,orientForm,formInfo,hasBlockForm,formsOverlap,connectionEligible,isConnectedForm,isSpatialForm} from './block-forms.mjs';
 import * as V from './blocks.mjs';
@@ -16,7 +17,7 @@ export function defaultSlots(){return[
  {kind:'block',material:'planks',w:3,d:.2,h:2,yaw:0,step:.1,shape:'box'},
  {kind:'block',material:'glass',w:1,d:.1,h:2,yaw:0,step:.1,shape:'box'},
  {kind:'door',variant:'oak',w:1,d:.15,h:2,yaw:0,step:1},
- {kind:'object',type:'tree',variant:'oak',yaw:0,step:1},
+ makeTreeItem({key:'small'}),
  {kind:'object',type:'npc',yaw:0,step:1},
  {kind:'object',type:'light',yaw:0,step:1},
  {kind:'selection',name:'Sélection de zone'}
@@ -45,7 +46,7 @@ export function ensureTreeExamples(world){
  }
  world.builtinTreeSchemasRevision=4;
 }
-export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];ensureTreeExamples(world);ensureTreeTypes(world);return world.builder}
+export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];ensureTreeExamples(world);ensureTreeTypes(world);for(let i=0;i<world.builder.slots.length;i++){const item=world.builder.slots[i];if(item?.kind!=='schema')continue;const schema=world.schematics.find(s=>s.id===item.id);if(schema?.treeConfig&&schema.objects?.length===1&&isUnifiedTree(schema.objects[0]))world.builder.slots[i]={...makeTreeItem({...schema.treeConfig,name:schema.name}),yaw:item.yaw||0}}return world.builder}
 export function itemName(item,world){if(!item)return'Vide';if(formAllowed(item)&&isForm(item.shape))return (W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(item.shape).name;if(item.kind==='block')return liquidPresetName(item.material,item.liquidStyle)||(item.liquidStyle?((W.BLOCKS[item.material]?.name||'Bloc')+' personnalisée'):(W.BLOCKS[item.material]?.name||'Bloc'));if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='treeType')return item.name||item.treeConfig?.name||'Arbre procédural';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}
 export function dimensions(item){const n=(v,f,max)=>Number.isFinite(+v)?W.clamp(snap(+v),.1,max):f;return{w:n(item.w,1,32),d:n(item.d,1,32),h:n(item.h,1,32)}}
 export function blockObject(material,x,y,z,w,d,h,yaw,id){return{...W.newObject('block',x,y,id),name:W.BLOCKS[material]?.name||'Bloc',material,w,d,height:h,baseZ:snap(z),facing:yaw,group:null,blocking:W.BLOCKS[material]?.solid!==false,blocksSight:!!W.BLOCKS[material]?.opaque,shadow:true,frameCount:1,frames:{},...(W.BLOCKS[material]?.emissive?{light:{radius:5,power:1,color:W.BLOCKS[material].accent||W.BLOCKS[material].top}}:{})}}
@@ -78,8 +79,8 @@ export function placement(item,point,world,id=()=>crypto.randomUUID()){
   // Each click anchors the trunk at the target cell, independently of the
   // changing crown dimensions. Only successful placement advances sequence.
   if(n&&n.z<.5)return[];
-  const v=treeVariant(config,plantSequence(world)),o={...W.newObject('tree',0,0,id()),...v.extent,name:config.name,material:config.material,treeGraph:v.graph,treeConfig:config,treeVariantSeed:v.seed,treeVariantSequence:v.sequence,canopy:0,group:null,baseZ:z,facing:yaw,blocking:true,blocksSight:!!def.opaque};
-  o.x=Math.floor(point.x)+.5-o.w/2;o.y=Math.floor(point.y)+.5-o.d/2;return[o];
+  const v=treeVariant(config,plantSequence(world)),o={...W.newObject('tree',0,0,id()),...v.extent,name:config.name,material:config.material,treeGraph:v.graph,treeConfig:config,treeVariantSeed:v.seed,treeVariantSequence:v.sequence,canopy:0,group:null,baseZ:z,facing:yaw+v.rotation,blocking:true,blocksSight:!!def.opaque};
+  o.x=Math.floor(point.x)+.5-o.w/2;o.y=Math.floor(point.y)+.5-o.d/2;return[planTreePlanting(point.treeMap,o)];
  }
  if(item.kind==='schema')return schemaPlacement(world.schematics.find(s=>s.id===item.id),{x:point.x,y:point.y,z},yaw,id);
  if(item.kind==='block'){
@@ -115,10 +116,11 @@ export function overlap(a,b,map){
 export function placementError(map,objects){
  if(!objects.length)return'Choisissez un élément dans l’inventaire.';
  for(const o of objects){
+  const plan=treePlantingPlan(o);if(plan?.error)return plan.error;
   const z=W.elevation(o,map);if(!Number.isFinite(z)||z< -16||z+(o.height||1)>32)return'Altitude autorisée : de −16 à +32.';
   const error=W.placementError(map,o);if(error)return error;
   if(!['block','build_door','tree'].includes(o.type))continue;
-  for(const other of map.objects)if(['block','build_door','tree'].includes(other.type)&&other.id!==o.id&&overlap(o,other,map))return other.type==='tree'||o.type==='tree'?'Un arbre occupe ce volume.':'Ce volume est déjà occupé.';
+  for(const other of map.objects){const effective=plan?.replacements.get(other.id)||other;if(['block','build_door','tree'].includes(effective.type)&&effective.id!==o.id&&overlap(o,effective,map))return effective.type==='tree'||o.type==='tree'?'Un arbre occupe ce volume.':'Ce volume est déjà occupé.';}
   const b=W.bounds(o);for(let x=Math.max(0,Math.floor(b.x));x<Math.min(map.width,Math.ceil(b.x+b.w));x++)for(let y=Math.max(0,Math.floor(b.y));y<Math.min(map.height,Math.ceil(b.y+b.h));y++)for(const [base,material] of Object.entries(map.blocks?.[W.cellKey(x,y)]||{})){
    const voxel=blockObject(material,x,y,+base,1,1,W.blockSize(map,x,y,+base),0,'voxel');if(overlap(o,voxel,map))return'Un bloc occupe ce volume.';
   }
