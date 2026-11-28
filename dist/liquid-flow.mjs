@@ -208,10 +208,13 @@ export function liquidMeshData(result,include=()=>true,slice=32){
 }
 export function createLiquidCache(){
  const cache=new WeakMap();
- return (map,W,mode)=>{
+ return (map,W,mode,edit=null)=>{
   const key=JSON.stringify([mode,map.width,map.height,map.blockRevision,map.buildRevision,map.groups?.map(g=>[g.id,g.visible]),map.chunks.length]);
   let c=cache.get(map);
   if(c?.key===key&&c.chunks===map.chunks)return c.result;
-  const result=deriveLiquids(map,W,mode);cache.set(map,{key,chunks:map.chunks,result});return result;
+  const dry=c&&c.chunks===map.chunks&&c.mode===mode&&c.width===map.width&&c.height===map.height&&c.groupKey===JSON.stringify(map.groups?.map(g=>[g.id,g.visible]))&&!c.result.cells.length&&!c.result.irregular.length;
+  const verified=edit?.map===map&&edit.previousBlockRevision===c?.blockRevision&&edit.previousBuildRevision===c?.buildRevision&&edit.blockRevision===(map.blockRevision||0)&&edit.buildRevision===(map.buildRevision||0);
+  const reuse=dry&&verified&&(edit.manualRemoval||edit.placementOnly&&edit.addedObjects.every(o=>!isLiquid(o.material)));
+  const result=reuse?c.result:deriveLiquids(map,W,mode);cache.set(map,{key,chunks:map.chunks,result,mode,width:map.width,height:map.height,groupKey:JSON.stringify(map.groups?.map(g=>[g.id,g.visible])),blockRevision:map.blockRevision||0,buildRevision:map.buildRevision||0});return result;
  };
 }

@@ -655,7 +655,7 @@ function creativeUse(){
  if(!creativeStroke||document.pointerLockElement!==canvas||inventoryOpen)return;const p=creativePoint(),item=heldItem();let changed=false,placementToken=null,placed=null,removalToken=null,removed=null,soundMaterial=item.material;if(['brush','fogbrush'].includes(item.kind)){useCreativeBrush(p,item,creativeStroke.button===0);return}
  if(creativeStroke.button===0){
   const id=creativePick()||p.objectId||p.placedBlock?.id,o=map().objects.find(o=>o.id===id);
-  if(o){if(locked(o)){toast('Cet élément ou son groupe est verrouillé.');return}if(creativeStroke.seen.has(o.id))return;creativeStroke.seen.add(o.id);soundMaterial=o.material||'stone';if(o.type==='block'&&!hasBlockForm(o)){removalToken=scene.beginRemovalEdit(map(),terrainEpoch);removed={voxels:[],objects:[o.id],ground:0,groundColumns:[]}}map().objects=map().objects.filter(t=>t.id!==o.id);if(selection===o.id)selection=null;changed=true}
+  if(o){if(locked(o)){toast('Cet élément ou son groupe est verrouillé.');return}if(creativeStroke.seen.has(o.id))return;creativeStroke.seen.add(o.id);soundMaterial=o.material||'stone';if(o.type==='block'){removalToken=scene.beginRemovalEdit(map(),terrainEpoch);removed={voxels:[],objects:[o.id],ground:0,groundColumns:[]}}map().objects=map().objects.filter(t=>t.id!==o.id);if(selection===o.id)selection=null;changed=true}
   else if(p.block){const b=p.block,base=W.blockBase(map(),b.x,b.y,b.z);if(base===null)return;const key=b.x+','+b.y+','+base,gid=map().blockGroups?.[key];if(map().groups.find(g=>g.id===gid)?.locked){toast('Ce groupe est verrouillé.');return}if(creativeStroke.seen.has(key))return;creativeStroke.seen.add(key);
    removalToken=scene.beginRemovalEdit(map(),terrainEpoch);removed={voxels:[key],objects:[],ground:0,groundColumns:[]};
    soundMaterial=W.blockAt(map(),b.x,b.y,base);changed=W.setBlock(map(),b.x,b.y,base,null);if(changed&&map().blockGroups)delete map().blockGroups[key]}else{const b=CT.targetCell(p);if(b&&W.activeCell(map(),b.x,b.y)){const key='ground:'+b.x+','+b.y+','+b.z;if(!creativeStroke.seen.has(key)){creativeStroke.seen.add(key);
@@ -668,7 +668,7 @@ function creativeUse(){
   const parts=C.placement(item,p,world,uid),error=C.placementError(map(),parts);if(error){$('#hint').textContent=error;return}
   const key=parts.map(o=>[o.type,o.x,o.y,o.baseZ,o.facing].join(',')).join(';');if(creativeStroke.seen.has(key))return;creativeStroke.seen.add(key);
   if(item.kind==='schema'){const schema=world.schematics.find(s=>s.id===item.id),id=uid();map().groups.push({id,name:schema.name,color:'#93b7a0',visible:true,locked:false,kind:'schematic',schemaId:schema.id});for(const o of parts)o.group=id;collapsed.add(id)}
-  if(item.kind==='block'&&parts.every(o=>o.type==='block'&&!hasBlockForm(o)&&Number.isFinite(o.baseZ))){placementToken=scene.beginPlacementEdit(map(),terrainEpoch);placed=parts}
+  if(item.kind==='block'&&parts.every(o=>o.type==='block'&&Number.isFinite(o.baseZ))){placementToken=scene.beginPlacementEdit(map(),terrainEpoch);placed=parts}
   map().objects.push(...parts);soundMaterial=parts[0]?.material||soundMaterial;changed=true;
  }
  if(changed){playWorldSound(materialSound(soundMaterial,W.BLOCKS[soundMaterial]?.category,creativeStroke.button===0),p,{range:20,volume:.7});creativeStroke.changed=true;settleBlockActors();invalidate();if(placementToken)scene.finishPlacementEdit(map(),terrainEpoch,placementToken,placed);else if(removalToken)scene.finishRemovalEdit(map(),terrainEpoch,removalToken,removed);creativePreview();}

@@ -59,7 +59,7 @@ export function createReliefSectorPlans(){
   for(const e of scope.visibleColumns){const [x,y]=e[0].split(',').map(Number);collect(sector(x,y),'columns',e)}
   let order=0;for(const o of scope.visibleObjects){const k=sector(o.x+o.w/2,o.y+o.d/2);objectSectors.set(o.id,k);objectOrder.set(o.id,order++);collect(k,'objects',o)}
   for(const e of scope.earth){const [x,y]=e[0].split(',').map(Number);collect(sector(x,y),'earth',e)}
-  const large=Math.max(map.width,map.height)>64;
+  const large=true;
   const pending=[];let reused=0;
   for(const [k,src]of sources){
    const prior=useLocal&&!dirty.has(k)?state.entries.get(k):null;
