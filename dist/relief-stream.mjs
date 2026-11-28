@@ -8,6 +8,22 @@ export function createReliefStream(){
   if(index&&edit?.placementOnly&&edit.map===map&&edit.from===index.epoch&&edit.to===epoch&&index.map===map&&index.chunks===map.chunks&&index.blocks===map.blocks&&index.ground===map.ground&&index.objects===map.objects){
    index.key=key;index.epoch=epoch;index.placed.push(...edit.addedObjects);scope=null;
   }
+  // The manual edit was checked against the occlusion revision before
+  // publication. Retain the column index on a pure voxel/object removal.
+  // Ground cuts use the normal index path until their ground data is patched.
+  if(index&&edit?.manualRemoval&&!edit.changes.ground&&edit.map===map&&edit.from===index.epoch&&edit.to===epoch&&index.map===map&&index.chunks===map.chunks&&index.blocks===map.blocks&&index.ground===map.ground){
+   const removed=new Set(edit.changes.objects);
+   if(removed.size)index.placed=index.placed.filter(o=>!removed.has(o.id));
+   const changedColumns=new Set(edit.changes.voxels.map(id=>id.split(',').slice(0,2).join(',')));
+   for(const k of changedColumns){
+    const [x,y]=k.split(',').map(Number),id=chunk(x,y),list=index.columns.get(id);
+    if(!list)continue;
+    const at=list.findIndex(e=>e[0]===k);if(at<0)continue;
+    if(map.blocks[k])list[at]=[k,map.blocks[k]];
+    else{list.splice(at,1);if(!list.length)index.columns.delete(id)}
+   }
+   index.objects=map.objects;index.key=key;index.epoch=epoch;scope=null;
+  }
   if(!index||index.map!==map||index.key!==key||index.chunks!==map.chunks||index.blocks!==map.blocks||index.ground!==map.ground||index.objects!==map.objects){
    const columns=new Map(),ground=new Map();
    for(const [k,column]of Object.entries(map.blocks||{})){

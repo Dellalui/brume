@@ -630,11 +630,17 @@ function creativePointerDown(e){
 function creativeRepeat(){creativeTimer=null;if(!creativeStroke||!creativeActive()||document.hidden)return;creativeUse();creativeTimer=setTimeout(creativeRepeat,150)}
 function stopCreativeStroke(){if(creativeTimer){clearTimeout(creativeTimer);creativeTimer=null}if(creativeStroke){const changed=creativeStroke.changed,snapshot=creativeStroke.snapshot;creativeStroke=null;if(changed){undo.push(snapshot);if(undo.length>35)undo.shift();redo.length=0;save();refresh()}}}
 function creativeUse(){
- if(!creativeStroke||document.pointerLockElement!==canvas||inventoryOpen)return;const p=creativePoint(),item=heldItem();let changed=false,placementToken=null,placed=null;if(['brush','fogbrush'].includes(item.kind)){useCreativeBrush(p,item,creativeStroke.button===0);return}
+ if(!creativeStroke||document.pointerLockElement!==canvas||inventoryOpen)return;const p=creativePoint(),item=heldItem();let changed=false,placementToken=null,placed=null,removalToken=null,removed=null;if(['brush','fogbrush'].includes(item.kind)){useCreativeBrush(p,item,creativeStroke.button===0);return}
  if(creativeStroke.button===0){
   const id=creativePick()||p.objectId||p.placedBlock?.id,o=map().objects.find(o=>o.id===id);
-  if(o){if(locked(o)){toast('Cet élément ou son groupe est verrouillé.');return}if(creativeStroke.seen.has(o.id))return;creativeStroke.seen.add(o.id);map().objects=map().objects.filter(t=>t.id!==o.id);if(selection===o.id)selection=null;changed=true}
-  else if(p.block){const b=p.block,key=b.x+','+b.y+','+b.z,gid=map().blockGroups?.[key];if(map().groups.find(g=>g.id===gid)?.locked){toast('Ce groupe est verrouillé.');return}if(creativeStroke.seen.has(key))return;creativeStroke.seen.add(key);changed=W.setBlock(map(),b.x,b.y,b.z,null);if(map().blockGroups)delete map().blockGroups[key]}else{const b=CT.targetCell(p);if(b&&W.activeCell(map(),b.x,b.y)){const key='ground:'+b.x+','+b.y+','+b.z;if(!creativeStroke.seen.has(key)){creativeStroke.seen.add(key);changed=CT.excavate(map(),b.x,b.y,b.z)}}}
+  if(o){if(locked(o)){toast('Cet élément ou son groupe est verrouillé.');return}if(creativeStroke.seen.has(o.id))return;creativeStroke.seen.add(o.id);if(o.type==='block'){removalToken=scene.beginRemovalEdit(map(),terrainEpoch);removed={voxels:[],objects:[o.id],ground:0,groundColumns:[]}}map().objects=map().objects.filter(t=>t.id!==o.id);if(selection===o.id)selection=null;changed=true}
+  else if(p.block){const b=p.block,base=W.blockBase(map(),b.x,b.y,b.z);if(base===null)return;const key=b.x+','+b.y+','+base,gid=map().blockGroups?.[key];if(map().groups.find(g=>g.id===gid)?.locked){toast('Ce groupe est verrouillé.');return}if(creativeStroke.seen.has(key))return;creativeStroke.seen.add(key);
+   removalToken=scene.beginRemovalEdit(map(),terrainEpoch);removed={voxels:[key],objects:[],ground:0,groundColumns:[]};
+   changed=W.setBlock(map(),b.x,b.y,base,null);if(changed&&map().blockGroups)delete map().blockGroups[key]}else{const b=CT.targetCell(p);if(b&&W.activeCell(map(),b.x,b.y)){const key='ground:'+b.x+','+b.y+','+b.z;if(!creativeStroke.seen.has(key)){creativeStroke.seen.add(key);
+   // Surface excavation without new support voxels is also a pure removal.
+   // Deeper side cuts materialize soil above the hole and need the full path.
+   const top=W.groundAt(map(),b.x,b.y),z=Math.floor(b.z);if(z<top&&z+1>=top){removalToken=scene.beginRemovalEdit(map(),terrainEpoch);removed={voxels:[],objects:[],ground:1,groundColumns:[W.cellKey(b.x,b.y)]}}
+   changed=CT.excavate(map(),b.x,b.y,b.z)}}}
  }else{
   const targetId=creativePick(),door=map().objects.find(o=>o.id===targetId&&W.isDoor(o));if(door&&creativeStroke.interact){if(creativeStroke.seen.has(door.id))return;creativeStroke.seen.add(door.id);if(door.open&&!W.canCloseDoor(map(),door)){toast('Le passage est occupé.');return}door.open=!door.open;creativeStroke.changed=true;invalidate();return}
   const parts=C.placement(item,p,world,uid),error=C.placementError(map(),parts);if(error){$('#hint').textContent=error;return}
@@ -643,7 +649,7 @@ function creativeUse(){
   if(item.kind==='block'&&parts.every(o=>o.type==='block'&&Number.isFinite(o.baseZ))){placementToken=scene.beginPlacementEdit(map(),terrainEpoch);placed=parts}
   map().objects.push(...parts);changed=true;
  }
- if(changed){creativeStroke.changed=true;settleBlockActors();invalidate();if(placementToken)scene.finishPlacementEdit(map(),terrainEpoch,placementToken,placed);creativePreview();}
+ if(changed){creativeStroke.changed=true;settleBlockActors();invalidate();if(placementToken)scene.finishPlacementEdit(map(),terrainEpoch,placementToken,placed);else if(removalToken)scene.finishRemovalEdit(map(),terrainEpoch,removalToken,removed);creativePreview();}
 }
 function saveCreativeSchema(){try{if(!creativeZone)throw Error('Définissez les deux coins de la zone.');const schema=C.captureSchema(map(),creativeZone,$('#schemaName').value,uid(),$('#schemaActors').checked);change(()=>world.schematics.push(schema));assignSlot({kind:'schema',id:schema.id,yaw:0,step:.1});creativeCategory='schemas';inventoryKey='';renderInventory();toast('Schéma enregistré : '+schema.objects.length+' éléments.')}catch(error){toast(error.message)}}
 function groupCreativeZone(){try{if(!creativeZone)throw Error('Définissez une zone.');C.zoneContents(map(),creativeZone,$('#schemaActors').checked);const id=uid();change(()=>C.groupZone(map(),creativeZone,$('#schemaName').value,id,$('#schemaActors').checked));collapsed.add(id);renderLayers();toast('Zone regroupée dans les calques.')}catch(error){toast(error.message)}}
