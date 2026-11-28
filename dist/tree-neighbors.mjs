@@ -11,7 +11,7 @@ function withGraph(o,g){if(g===o.treeGraph)return o;const c=W.center(o),e=treeEx
 function obstacleQuery(map,o){
  const c=W.center(o),z=W.elevation(o,map),a=o.facing||0,co=Math.cos(a),si=Math.sin(a),reach=Math.hypot(o.w,o.d)/2+3;
  const world=p=>[c.x+p[0]*co-p[1]*si,c.y+p[0]*si+p[1]*co,z+p[2]];
- const bins=new Map(),cell=4,key=(x,y)=>x+','+y;
+ const bins=new Map(),cell=4,key=(x,y)=>x+','+y,overhang=W.isUprightTree(o);
  function insert(b){for(let x=Math.floor(b.x/cell);x<=Math.floor((b.x+b.w)/cell);x++)for(let y=Math.floor(b.y/cell);y<=Math.floor((b.y+b.d)/cell);y++){const k=key(x,y);if(!bins.has(k))bins.set(k,[]);bins.get(k).push(b)}}
  for(const t of map.objects){
   if(t.id===o.id||t.blocking===false||W.character(t))continue;
@@ -22,11 +22,13 @@ function obstacleQuery(map,o){
   else insert({x:b.x,y:b.y,w:b.w,d:b.h,baseZ:tz,height:t.height||1});
  }
  function blocked(b,objectsOnly=false){
-  if(b.baseZ<-16||b.baseZ+b.height>32||b.x<0||b.y<0||b.x+b.w>map.width||b.y+b.d>map.height)return true;
+  if(b.baseZ<-16||b.baseZ+b.height>32||!overhang&&(b.x<0||b.y<0||b.x+b.w>map.width||b.y+b.d>map.height))return true;
   const seen=new Set();
   for(let x=Math.floor(b.x/cell);x<=Math.floor((b.x+b.w)/cell);x++)for(let y=Math.floor(b.y/cell);y<=Math.floor((b.y+b.d)/cell);y++)for(const v of bins.get(key(x,y))||[]){if(seen.has(v))continue;seen.add(v);if(boxIntersects(b,v))return true}
   for(let x=Math.floor(b.x);x<Math.ceil(b.x+b.w);x++)for(let y=Math.floor(b.y);y<Math.ceil(b.y+b.d);y++){
-   if(!W.activeCell(map,x,y))return true;
+   // Empty space beyond the active terrain is not a solid wall. Root
+   // centerlines independently require actual active ground.
+   if(!W.activeCell(map,x,y)){if(overhang)continue;return true}
    if(objectsOnly)continue;
    if(b.baseZ<W.groundAt(map,x,y)-.0001)return true;
    for(const [base,material] of Object.entries(map.blocks?.[W.cellKey(x,y)]||{})){
