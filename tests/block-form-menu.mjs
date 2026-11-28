@@ -5,6 +5,6 @@ globalThis.document={body:new Element('body'),createElement:t=>new Element(t),cr
 let item={kind:'block',material:'dirt',shape:'box'},active=true,changes=0;
 const menu=createBlockFormMenu({getItem:()=>item,active:()=>active,materialName:i=>i.material,onChange:()=>changes++});
 assert(menu.show());const root=document.body.children[0];assert(!root.hidden);assert.equal(changes,0);assert.equal(root.children[1].children.length,7);
-assert(!menu.wheel({shiftKey:true,deltaY:1}));assert(menu.wheel({altKey:true,deltaY:1}));assert.equal(item.shape,'slab');assert.equal(item.material,'dirt');assert.equal(changes,1);assert.match(root.children[0].textContent,/2 \/ 38/);
+assert(!menu.wheel({shiftKey:true,deltaY:1}));assert(menu.wheel({altKey:true,deltaY:1}));assert.equal(item.shape,'slab');assert.equal(item.material,'dirt');assert.equal(changes,1);assert.match(root.children[0].textContent,/2 \/ 40/);
 assert(menu.wheel({altKey:true,deltaY:-1}));assert.equal(item.shape,'box');menu.hide();assert(root.hidden);item={kind:'block',material:'water'};assert(!menu.show());assert(root.hidden);
 console.log('Alt menu: immediate open, material-preserving cycling, close and liquid gating OK');

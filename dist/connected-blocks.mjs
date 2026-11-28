@@ -1,7 +1,8 @@
 // Cardinal connections are derived from adjacent unit cells, never from the camera.
 // Persist only the 4-bit mask; the geometry and all collision paths share it.
-import {connectionEligible,isConnectedForm,isSpatialForm,connectionCompatible,connectionRadiusCode} from './block-forms.mjs';
+import {connectionEligible,isConnectedForm,isSpatialForm,connectionCompatible,connectionRadiusCode,diagonalEnabled} from './block-forms.mjs';
 const indices=new WeakMap(),DIRS=[[1,0,0],[0,1,0],[-1,0,0],[0,-1,0],[0,0,1],[0,0,-1]];
+const DIAGS=[];for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++)if(Math.abs(x)+Math.abs(y)+Math.abs(z)===2)DIAGS.push([x,y,z]);
 const cell=(x,y,z,level)=>[Math.round(x),Math.round(y),Math.round(z*1e5),level||0].join(',');
 const key=(o,dx=0,dy=0,dz=0)=>cell(o.x+dx,o.y+dy,o.baseZ+dz,o.level);
 function stateFor(map){return {map,bins:new Map(),byId:new Map(),hidden:new Set((map.groups||[]).filter(g=>g.visible===false).map(g=>g.id))}}
@@ -21,12 +22,25 @@ function links(s,o){
   const neighbors=[...(s.bins.get(key(o,dx,dy,dz))||[])].filter(n=>n!==o&&n.id!==o.id&&connectionCompatible(n.blockForm,o.blockForm)&&!!n.secret===!!o.secret);
   if(neighbors.length){bits|=1<<i;sizes|=Math.min(...neighbors.map(n=>connectionRadiusCode(n.blockForm,o.blockForm)))<<(i*3)}
  }
- return {bits,sizes};
+ const diagonals=[];
+ if(isSpatialForm(o.blockForm)){
+  const compatible=n=>n!==o&&n.id!==o.id&&isSpatialForm(n.blockForm)&&!!n.secret===!!o.secret;
+  for(const [dx,dy,dz] of DIAGS){
+   const neighbors=[...(s.bins.get(key(o,dx,dy,dz))||[])].filter(n=>compatible(n)&&(diagonalEnabled(o)||diagonalEnabled(n)));
+   if(!neighbors.length)continue;
+   // Prefer an existing orthogonal route; do not create triangular braces
+   // through an occupied intermediate connector.
+   if([[dx,0,0],[0,dy,0],[0,0,dz]].filter(v=>v.some(Boolean)).some(v=>[...(s.bins.get(key(o,...v))||[])].some(compatible)))continue;
+   let x=dx,y=dy;for(let j=0;j<turn;j++)[x,y]=[y,-x];
+   diagonals.push([x,y,dz,Math.min(...neighbors.map(n=>connectionRadiusCode(n.blockForm,o.blockForm)))]);
+  }
+ }
+ diagonals.sort((a,b)=>a[0]-b[0]||a[1]-b[1]||a[2]-b[2]);return {bits,sizes,diagonals};
 }
-function refresh(s,o,changed){const {bits,sizes}=links(s,o);if(o.formConnections!==bits||isSpatialForm(o.blockForm)&&o.formConnectionSizes!==sizes){o.formConnections=bits;if(isSpatialForm(o.blockForm))o.formConnectionSizes=sizes;changed.push(o)}}
+function refresh(s,o,changed){const {bits,sizes,diagonals}=links(s,o);if(o.formConnections!==bits||isSpatialForm(o.blockForm)&&(o.formConnectionSizes!==sizes||JSON.stringify(o.formDiagonalLinks||[])!==JSON.stringify(diagonals||[]))){o.formConnections=bits;if(isSpatialForm(o.blockForm)){o.formConnectionSizes=sizes;o.formDiagonalLinks=diagonals||[]}changed.push(o)}}
 function around(s,o,dirty){
  if(!connectionEligible(o))return;
- for(const [dx,dy,dz]of [[0,0,0],...DIRS])for(const n of s.bins.get(key(o,dx,dy,dz))||[])dirty.add(n);
+ for(const [dx,dy,dz]of [[0,0,0],...DIRS,...DIAGS])for(const n of s.bins.get(key(o,dx,dy,dz))||[])dirty.add(n);
 }
 // Full reconciliation for world import, undo, group/position/dimension edits.
 export function rebuildConnections(map){
@@ -34,7 +48,7 @@ export function rebuildConnections(map){
  for(const o of map.objects||[])insert(s,o);
  for(const o of map.objects||[])if(isConnectedForm(o.blockForm)){
   if(connectionEligible(o))refresh(s,o,changed);
-  else if(o.formConnections!==undefined){delete o.formConnections;delete o.formConnectionSizes;changed.push(o)}
+  else if(o.formConnections!==undefined){delete o.formConnections;delete o.formConnectionSizes;delete o.formDiagonalLinks;changed.push(o)}
  }
  indices.set(map,s);return changed;
 }

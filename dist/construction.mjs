@@ -18,25 +18,25 @@ export function defaultSlots(){return[
  {kind:'selection',name:'Sélection de zone'}
 ]}
 const TREE_EXAMPLES=[
- ['small','Arbre sec simple','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,1],[0,0,3,2],[0,0,4,5],[1,0,2,2],[2,0,2,3],[2,0,3,5],[-1,0,3,3],[-1,0,4,5]]],
- ['fork','Arbre fourchu','birchwood',[[0,0,0,1],[0,0,1,1],[0,0,2,1],[-1,0,2,2],[-1,0,3,2],[-1,0,4,3],[-2,0,4,4],[-2,0,5,5],[1,0,2,2],[1,0,3,2],[1,0,4,3],[2,0,4,4],[2,0,5,5],[1,1,3,4],[1,1,4,5]]],
- ['tall','Grand arbre mort','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,0],[0,0,3,0],[0,0,4,1],[0,0,5,2],[0,0,6,3],[0,0,7,5],[1,0,3,2],[2,0,3,2],[3,0,3,3],[3,0,4,4],[3,0,5,5],[2,1,3,4],[2,2,3,5],[-1,0,4,2],[-2,0,4,3],[-2,0,5,4],[-3,0,5,5],[0,-1,5,3],[0,-2,5,4],[0,-2,6,5]]],
- ['stump','Souche et racines','oak',[[0,0,0,0],[0,0,1,0],[1,0,0,2],[2,0,0,3],[3,0,0,5],[-1,0,0,2],[-2,0,0,5],[0,1,0,2],[0,2,0,4],[1,2,0,5],[0,-1,0,3],[0,-2,0,5]]],
- ['lean','Tronc sinueux','pinewood',[[0,0,0,1],[0,0,1,1],[1,0,1,2],[1,0,2,2],[1,0,3,2],[2,0,3,3],[2,0,4,3],[3,0,4,4],[3,0,5,5],[1,-1,2,3],[1,-2,2,5]]],
- ['crown','Arbre sec ramifié','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,0],[0,0,3,1],[0,0,4,2],[0,0,5,5],[1,0,2,2],[2,0,2,2],[2,0,3,3],[3,0,3,4],[3,0,4,5],[2,1,2,3],[2,2,2,5],[-1,0,2,2],[-2,0,2,3],[-2,0,3,4],[-2,0,4,5],[0,1,3,2],[0,2,3,3],[0,2,4,4],[1,2,4,5],[0,-1,3,2],[0,-2,3,3],[0,-2,4,5]]]
+ ['small','Arbre sec simple','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,1],[0,0,3,2],[0,0,4,5],[1,0,3,2],[2,0,4,3],[3,0,5,5],[-1,0,2,3],[-2,0,3,5]]],
+ ['fork','Arbre fourchu','birchwood',[[0,0,0,1],[0,0,1,1],[0,0,2,1],[-1,0,3,2],[-2,0,4,3],[-2,0,5,5],[1,0,3,2],[2,0,4,3],[3,0,5,5],[1,1,3,4],[1,2,4,5]]],
+ ['tall','Grand arbre mort','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,0],[0,0,3,0],[0,0,4,1],[0,0,5,2],[0,0,6,3],[0,0,7,5],[1,0,3,2],[2,0,4,2],[3,0,5,3],[4,0,6,5],[2,1,4,4],[2,2,5,5],[-1,0,5,2],[-2,0,6,3],[-3,0,7,5],[0,-1,4,3],[0,-2,5,4],[0,-3,6,5]]],
+ ['stump','Souche et racines','oak',[[0,0,0,0],[0,0,1,0],[1,0,0,2],[2,0,0,3],[3,1,0,5],[-1,0,0,2],[-2,-1,0,5],[0,1,0,2],[0,2,0,4],[1,3,0,5],[0,-1,0,3],[0,-2,0,5]]],
+ ['lean','Tronc sinueux','pinewood',[[0,0,0,1],[0,0,1,1],[1,0,2,2],[2,0,3,2],[2,0,4,3],[3,0,5,3],[4,0,6,5],[1,-1,3,3],[1,-2,4,5]]],
+ ['crown','Arbre sec ramifié','oak',[[0,0,0,0],[0,0,1,0],[0,0,2,0],[0,0,3,1],[0,0,4,2],[0,0,5,5],[1,0,3,2],[2,0,4,2],[3,0,5,3],[4,0,6,5],[2,1,4,3],[2,2,5,5],[-1,0,2,2],[-2,0,3,3],[-3,0,4,4],[-4,0,5,5],[0,1,3,2],[0,2,4,3],[0,3,5,5],[0,-1,3,2],[0,-2,4,3],[1,-3,4,5]]]
 ];
 const TREE_FORMS=['trunk-connected','pillar-connected','branch-connected','pillar-thin-connected','rod-connected','spike-connected'];
 export function ensureTreeExamples(world){
- world.schematics??=[];if(world.builtinTreeSchemasRevision>=1)return;
- const ids=new Set(world.schematics.map(s=>s.id));
+ world.schematics??=[];if(world.builtinTreeSchemasRevision>=2)return;
+ world.schematics=world.schematics.filter(s=>!(s.builtin&&s.id.startsWith('builtin-tree-')));const ids=new Set(world.schematics.map(s=>s.id));
  for(const [key,name,material,cells]of TREE_EXAMPLES){
   const id='builtin-tree-'+key;if(ids.has(id))continue;
   const minX=Math.min(...cells.map(c=>c[0])),minY=Math.min(...cells.map(c=>c[1]));
-  const objects=cells.map(([x,y,z,t],i)=>({...blockObject(material,x-minX,y-minY,z,1,1,1,0,id+'-'+i),blockForm:TREE_FORMS[t],formConnect:true,formFlip:false,formMirror:false}));
+  const objects=cells.map(([x,y,z,t],i)=>({...blockObject(material,x-minX,y-minY,z,1,1,1,0,id+'-'+i),blockForm:TREE_FORMS[t],formConnect:true,formDiagonal:true,formFlip:false,formMirror:false}));
   rebuildConnections({objects,groups:[]});
   world.schematics.push({id,name,w:Math.max(...objects.map(o=>o.x))+1,d:Math.max(...objects.map(o=>o.y))+1,h:Math.max(...objects.map(o=>o.baseZ))+1,objects,createdAt:0,builtin:true});
  }
- world.builtinTreeSchemasRevision=1;
+ world.builtinTreeSchemasRevision=2;
 }
 export function initBuilder(world){world.builder??={slots:defaultSlots(),active:1};if(!Array.isArray(world.builder.slots)||world.builder.slots.length!==9)world.builder.slots=defaultSlots();world.builder.active=W.clamp(Math.floor(world.builder.active)||0,0,8);world.schematics??=[];ensureTreeExamples(world);return world.builder}
 export function itemName(item,world){if(!item)return'Vide';if(formAllowed(item)&&isForm(item.shape))return (W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(item.shape).name;if(item.kind==='block')return liquidPresetName(item.material,item.liquidStyle)||(item.liquidStyle?((W.BLOCKS[item.material]?.name||'Bloc')+' personnalisée'):(W.BLOCKS[item.material]?.name||'Bloc'));if(item.kind==='door')return DOORS[item.variant]||'Porte';if(item.kind==='object')return W.TYPES[item.type]||'Décor';if(item.kind==='schema')return world.schematics?.find(s=>s.id===item.id)?.name||'Schéma absent';return item.name||'Sélection'}
@@ -48,7 +48,7 @@ export function placement(item,point,world,id=()=>crypto.randomUUID()){
  const size=dimensions(item),yaw=(item.yaw||0)*Math.PI/180,step=item.step===1?1:.1;
  if(formAllowed(item)&&isForm(item.shape)){
   const pose=orientForm({...item,...size},point),o=blockObject(item.material,pose.x,pose.y,pose.z,pose.w,pose.d,pose.h,pose.angle,id());
-  Object.assign(o,{baseZ:pose.z,blockForm:pose.shape,formFlip:pose.flipZ,formMirror:pose.mirror,name:(W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(pose.shape).name});if(isConnectedForm(o.blockForm)){o.formConnect=item.align!==false;if(connectionEligible(o)){const {bits,sizes}=previewConnectionData(point.formMap,o);o.formConnections=bits;if(isSpatialForm(o.blockForm))o.formConnectionSizes=sizes}}return[o];
+  Object.assign(o,{baseZ:pose.z,blockForm:pose.shape,formFlip:pose.flipZ,formMirror:pose.mirror,name:(W.BLOCKS[item.material]?.name||'Bloc')+' · '+formInfo(pose.shape).name});if(isConnectedForm(o.blockForm)){o.formConnect=item.align!==false;if(connectionEligible(o)){const {bits,sizes,diagonals}=previewConnectionData(point.formMap,o);o.formDiagonalLinks=diagonals||[];o.formConnections=bits;if(isSpatialForm(o.blockForm))o.formConnectionSizes=sizes}}return[o];
  }
  let center={x:snap(point.x-size.w/2,step)+size.w/2,y:snap(point.y-size.d/2,step)+size.d/2},z=snap(point.z),angle=yaw;
  const support=point.placedBlock,n=point.normal;
